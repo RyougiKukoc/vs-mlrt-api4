@@ -850,7 +850,7 @@ static void VS_CC vsMIGXCreate(
         {
             size_t target = 1; // MIGX uses elements to measure strides
             for (int i = static_cast<int>(ndim) - 1; i >= 0; i--) {
-                if (strides[i] != target) {
+                if (lengths[i] > 1 && strides[i] != target) {
                     return set_error(
                         "invalid stride for NCHW, expects " +
                         std::to_string(target) +
@@ -914,7 +914,7 @@ static void VS_CC vsMIGXCreate(
         {
             size_t target = 1; // MIGX uses elements to measure strides
             for (int i = static_cast<int>(ndim) - 1; i >= 0; i--) {
-                if (strides[i] != target) {
+                if (lengths[i] > 1 && strides[i] != target) {
                     return set_error(
                         "invalid stride for NCHW, expects " +
                         std::to_string(target) +
