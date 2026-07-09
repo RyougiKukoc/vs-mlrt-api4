@@ -2,6 +2,8 @@ name: Build (macOS-ORT)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'common/**'
       - 'vsort/**'

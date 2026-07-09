@@ -2,6 +2,8 @@ name: Build (Linux-TRT, ARM64)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'vstrt/**'
       - '.github/workflows/linux-trt-arm64.yml'

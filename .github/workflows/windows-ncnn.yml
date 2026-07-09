@@ -2,6 +2,8 @@ name: Build (Windows-NCNN)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'common/**'
       - 'vsncnn/**'

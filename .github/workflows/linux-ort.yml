@@ -2,6 +2,8 @@ name: Build (Linux-ORT)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'common/**'
       - 'vsort/**'

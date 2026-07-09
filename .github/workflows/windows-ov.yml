@@ -2,6 +2,8 @@ name: Build (Windows-OV)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'common/**'
       - 'vsov/**'

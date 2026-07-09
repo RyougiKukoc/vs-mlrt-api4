@@ -2,6 +2,8 @@ name: Build (Windows-ORT)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'common/**'
       - 'vsort/**'

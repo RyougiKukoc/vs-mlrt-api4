@@ -2,6 +2,8 @@ name: Build (Linux-NCNN)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'common/**'
       - 'vsncnn/**'

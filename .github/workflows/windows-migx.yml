@@ -2,6 +2,8 @@ name: Build (Windows-MIGX)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'vsmigx/**'
       - '.github/workflows/windows-migx.yml'

@@ -2,6 +2,8 @@ name: Build (Linux-OV, ARM64)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'vsov/**'
       - '.github/workflows/linux-ov-arm64.yml'

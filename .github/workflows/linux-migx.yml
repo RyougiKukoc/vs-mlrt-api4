@@ -2,6 +2,8 @@ name: Build (Linux-MIGX)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'vsmigx/**'
       - '.github/workflows/linux-migx.yml'

@@ -2,6 +2,8 @@ name: Build (Linux-TRT)
 
 on:
   push:
+    branches:
+      - '**'
     paths:
       - 'vstrt/**'
       - '.github/workflows/linux-trt.yml'
