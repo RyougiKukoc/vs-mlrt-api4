@@ -1,0 +1,96 @@
+name: Smoke VCS install
+
+on:
+  workflow_dispatch:
+    inputs:
+      cuda-flavor:
+        description: CUDA payload line to install
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - cu121
+          - cu129
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda_flavor: [cu121, cu129]
+    runs-on: windows-2022
+
+    steps:
+      - name: Select CUDA flavor
+        id: select
+        shell: pwsh
+        env:
+          INPUT_CUDA_FLAVOR: ${{ inputs['cuda-flavor'] }}
+          MATRIX_CUDA_FLAVOR: ${{ matrix.cuda_flavor }}
+        run: |
+          $shouldBuild = (
+            $env:INPUT_CUDA_FLAVOR -eq "all" -or
+            $env:INPUT_CUDA_FLAVOR -eq $env:MATRIX_CUDA_FLAVOR
+          )
+          "should_build=$($shouldBuild.ToString().ToLowerInvariant())" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+
+      - name: Set up Python
+        if: steps.select.outputs.should_build == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package from tag
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir "vs-mlrt @ git+https://github.com/${{ github.repository }}.git@${{ matrix.cuda_flavor }}"
+
+      - name: Verify installed layout
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        env:
+          EXPECTED_CUDA_FLAVOR: ${{ matrix.cuda_flavor }}
+        run: |
+          @'
+          import os
+          import site
+          from pathlib import Path
+
+          roots = [Path(p) for p in site.getsitepackages()]
+          user_site = site.getusersitepackages()
+          if user_site:
+              roots.append(Path(user_site))
+
+          def find(rel):
+              for root in roots:
+                  candidate = root / rel
+                  if candidate.exists():
+                      return candidate
+              return None
+
+          flavor = os.environ["EXPECTED_CUDA_FLAVOR"]
+          required = [
+              Path("vsmlrt.py"),
+              Path("vapoursynth/plugins/vsmlrt/manifest.vs"),
+              Path("vapoursynth/plugins/vsmlrt/vstrt.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/trtexec.exe"),
+              Path("vapoursynth/plugins/vsmlrt/models/dpir"),
+          ]
+          if flavor == "cu129":
+              required.append(Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"))
+
+          missing = [str(rel) for rel in required if find(rel) is None]
+          if missing:
+              raise SystemExit("Missing installed files: " + ", ".join(missing))
+
+          rtx = find(Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"))
+          if flavor == "cu121" and rtx is not None:
+              raise SystemExit("cu121 install unexpectedly contains vstrt_rtx.dll")
+
+          manifest = find(Path("vapoursynth/plugins/vsmlrt/manifest.vs"))
+          print(manifest.read_text(encoding="ascii"))
+          print(f"Verified {flavor} install under: {manifest.parent}")
+          '@ | python -
