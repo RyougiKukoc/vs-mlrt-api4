@@ -98,4 +98,12 @@ jobs:
           manifest = find(Path("vapoursynth/plugins/vsmlrt/manifest.vs"))
           print(manifest.read_text(encoding="ascii"))
           print(f"Verified {flavor} install under: {manifest.parent}")
+
+          import vapoursynth as vs
+
+          core = vs.core
+          core.std.LoadPlugin(path=str(manifest.parent / "vstrt.dll"))
+          if flavor == "cu129":
+              core.std.LoadPlugin(path=str(manifest.parent / "vstrt_rtx.dll"))
+          print(f"Loaded VapourSynth plugins for {flavor}")
           '@ | python -
