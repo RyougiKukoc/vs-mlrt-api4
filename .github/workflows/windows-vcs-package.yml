@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         cuda_flavor: [cu121, cu129]
-    runs-on: windows-2025
+    runs-on: windows-2022
 
     steps:
       - name: Select CUDA flavor
