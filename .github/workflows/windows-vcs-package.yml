@@ -231,6 +231,20 @@ jobs:
             }
           }
 
+          $modelsDir = "payload\vsmlrt\models"
+          New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+          Get-ChildItem -Path "payload\vsmlrt" -Directory |
+            Where-Object { $_.Name -ne "models" -and $_.Name -ne "vsmlrt-cuda" } |
+            ForEach-Object {
+              $target = Join-Path $modelsDir $_.Name
+              if (Test-Path -LiteralPath $target) {
+                Copy-Item -Path "$($_.FullName)\*" -Destination $target -Recurse -Force
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force
+              } else {
+                Move-Item -LiteralPath $_.FullName -Destination $modelsDir
+              }
+            }
+
       - name: Configure vstrt
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
