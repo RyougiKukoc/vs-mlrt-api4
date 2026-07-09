@@ -7,7 +7,7 @@ on:
         description: CUDA payload line to install
         type: choice
         required: true
-        default: all
+        default: cu121
         options:
           - all
           - cu121
@@ -184,7 +184,7 @@ jobs:
                   raise SystemExit("Missing PE imports:\n" + "\n".join(sorted(set(missing))))
               return sorted(set(missing_driver))
 
-          def print_dll_string_refs(path):
+          def check_dll_string_refs(path):
               data = path.read_bytes()
               refs = sorted(
                   set(
@@ -206,12 +206,20 @@ jobs:
                   "zlib",
               )
               interesting = [ref for ref in refs if any(token in ref for token in tokens)]
+              missing = []
+              driver_refs = []
               print(f"DLL string refs in {path.name}:")
               for ref in interesting:
                   status = "found" if resolve_import(ref) is not None else "missing"
                   if ref == "nvcuda.dll":
                       status = "driver"
+                      driver_refs.append(f"{path.name} -> {ref}")
+                  elif status == "missing":
+                      missing.append(f"{path.name} -> {ref}")
                   print(f"  {status}: {ref}")
+              if missing:
+                  raise SystemExit("Missing DLL string refs:\n" + "\n".join(missing))
+              return driver_refs
 
           pe_targets = [
               manifest.parent / "vstrt.dll",
@@ -226,10 +234,10 @@ jobs:
                   ]
               )
           missing_driver = check_import_tree(pe_targets)
+          missing_driver.extend(check_dll_string_refs(cuda_dir / f"nvinfer_plugin{trt_suffix}.dll"))
           if missing_driver:
               print("Allowed missing NVIDIA driver imports on GitHub runner:")
-              print("\n".join(missing_driver))
-          print_dll_string_refs(cuda_dir / f"nvinfer_plugin{trt_suffix}.dll")
+              print("\n".join(sorted(set(missing_driver))))
 
           load_script = f"""
           import vapoursynth as vs
@@ -264,7 +272,11 @@ jobs:
           if missing_driver:
               stderr_lines = [
                   line for line in stderr_lines
-                  if "tensorrt_rtx" not in line and "vstrt_rtx: TensorRT failed to load" not in line
+                  if (
+                      "nvinfer_plugin" not in line
+                      and "tensorrt_rtx" not in line
+                      and "vstrt_rtx: TensorRT failed to load" not in line
+                  )
               ]
           if any("failed to preload" in line or "TensorRT failed to load" in line for line in stderr_lines):
               raise SystemExit("TensorRT preload emitted loader errors.")

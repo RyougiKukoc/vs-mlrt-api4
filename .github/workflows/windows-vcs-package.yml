@@ -11,7 +11,7 @@ on:
         description: CUDA payload line to build
         type: choice
         required: true
-        default: all
+        default: cu121
         options:
           - all
           - cu121

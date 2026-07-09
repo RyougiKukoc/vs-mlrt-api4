@@ -31,6 +31,22 @@ The model directory is assembled in CI from the upstream `model-20211209`, `mode
 
 Do not point both tags at the same commit. If both tags share one commit, a pip VCS checkout may not preserve which tag the user requested. The `packaging/cuda-tag.txt` file must read `cu121` in the `cu121` tag commit and `cu129` in the `cu129` tag commit.
 
+## Validation Notes
+
+Focus validation on one CUDA line at a time. The workflow dispatch defaults are intentionally `cu121`; run `cu129` only after `cu121` has passed packaging and VCS install smoke.
+
+GitHub-hosted Windows runners do not provide the NVIDIA display driver, so `nvcuda.dll` is an allowed missing dependency in smoke tests. Any other missing PE import or DLL string reference is treated as a packaging error. A passing runner smoke verifies the VCS install path, package layout, TensorRT redist DLL coverage, and VapourSynth plugin load up to the driver boundary; it does not prove GPU inference. Final DPIR/TRT runtime inference still needs a CUDA machine.
+
+Only Windows prebuilt release payloads are published. Non-Windows VCS installs do not download these release assets and should use the source-build path instead.
+
+## Process Self-Review
+
+Keep the validation loop narrow. First run `windows-vcs-package.yml` and `windows-vcs-install-smoke.yml` with `cuda-flavor=cu121`; only then repeat for `cu129`. Avoid `cuda-flavor=all` while debugging one line.
+
+Treat green CI cautiously. Earlier smoke tests passed while TensorRT printed loader errors; strict smoke now captures plugin stderr, checks recursive PE imports, and scans TensorRT DLL string references for dynamically loaded dependencies.
+
+Keep `vsmlrt.py` as the immutable entry point. Packaging changes may alter installed native payloads, but users must still call models through `import vsmlrt` and functions such as `DPIR(..., backend=...)`.
+
 ## CUDA-Sensitive Code
 
 The C++ TRT plugin is mostly keyed on TensorRT API macros, not CUDA minor versions. These blocks should move only when the selected TensorRT release changes:

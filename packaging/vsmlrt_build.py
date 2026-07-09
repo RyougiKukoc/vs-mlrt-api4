@@ -23,13 +23,15 @@ class CustomBuildHook(BuildHookInterface):
         if self.target_name != "wheel":
             return
 
-        build_data["tag"] = "py3-none-win_amd64"
-
         if os.environ.get("VSMLRT_SKIP_PREBUILT") == "1":
             return
 
         if platform.system() != "Windows":
-            raise RuntimeError("vs-mlrt release-backed VCS installs currently target Windows.")
+            # Non-Windows installs should use the source-build path instead of
+            # downloading Windows-only release payloads.
+            return
+
+        build_data["tag"] = "py3-none-win_amd64"
 
         payload_zip_paths = self._resolve_payload_paths()
 
