@@ -339,6 +339,13 @@ jobs:
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
 
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            $builderCudaDir = "payload-builder\vsmlrt\vsmlrt-cuda"
+            New-Item -ItemType Directory -Force $builderCudaDir | Out-Null
+            Get-ChildItem -Path $baseCudaDir -Filter "nvinfer_builder_resource*.dll" |
+              Move-Item -Destination $builderCudaDir
+          }
+
           if (Test-Path "payload\vsmlrt\models") {
             Copy-Item -LiteralPath "payload\vsmlrt\models" -Destination $modelsPluginDir -Recurse -Force
           } else {
@@ -384,6 +391,7 @@ jobs:
             "payload-models\vsmlrt\models\dpir"
           )
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            $required += "payload-builder\vsmlrt\vsmlrt-cuda\nvinfer_builder_resource_11.dll"
             $required += "payload-rtx\vsmlrt\manifest.vs"
             $required += "payload-rtx\vsmlrt\vstrt_rtx.dll"
             $required += "payload-rtx\vsmlrt\vsmlrt-cuda\tensorrt_rtx_1_5.dll"
@@ -406,6 +414,7 @@ jobs:
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload-base\*
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-models.zip" .\payload-models\*
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-builder-cu129.zip" .\payload-builder\*
             7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip" .\payload-rtx\*
           }
           Get-ChildItem vs-mlrt-windows-x64-*.zip |

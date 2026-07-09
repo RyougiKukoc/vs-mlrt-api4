@@ -78,6 +78,7 @@ class CustomBuildHook(BuildHookInterface):
             "vs-mlrt-windows-x64-models.zip",
         ]
         if cuda_tag == "cu129":
+            assets.append("vs-mlrt-windows-x64-tensorrt-builder-cu129.zip")
             assets.append("vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip")
 
         urls = [f"https://github.com/{repo}/releases/download/{cuda_tag}/{asset}" for asset in assets]

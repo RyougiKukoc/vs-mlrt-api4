@@ -84,6 +84,7 @@ jobs:
           ]
           if flavor == "cu129":
               required.append(Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"))
+              required.append(Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvinfer_builder_resource_11.dll"))
               required.append(Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/tensorrt_rtx_1_5.dll"))
 
           missing = [str(rel) for rel in required if find(rel) is None]
