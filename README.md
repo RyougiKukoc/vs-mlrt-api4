@@ -46,7 +46,22 @@ harder than the other runtimes. However, the resulting performance is also typic
 [TensorRT-RTX](https://developer.nvidia.com/tensorrt-rtx) is a specialization of TensorRT
 for NVIDIA RTX GPUs, which compiles engines faster with comparable performance with TensorRT.
 
-To install, download the latest release and extract them into your VS `plugins` directory.
+This fork also supports release-backed VCS installs for Windows TensorRT builds.
+Choose the CUDA line by tag:
+
+```powershell
+pip install "vs-mlrt @ git+https://github.com/<owner>/vs-mlrt.git@cu129"
+pip install "vs-mlrt @ git+https://github.com/<owner>/vs-mlrt.git@cu121"
+```
+
+`cu129` installs the CUDA 12.9 TensorRT payload with both `trt` and `trt_rtx`.
+`cu121` installs the CUDA 12.1 TensorRT payload with `trt` only. The public
+entry point remains `vsmlrt.py`; use calls such as
+`vsmlrt.DPIR(..., backend=vsmlrt.Backend.TRT(...))` as before. The wheel also
+installs the bundled model directory expected by the wrapper.
+
+For manual installs, download the matching release asset and extract it into
+your VS `plugins` directory.
 
 Please visit the [vstrt](vstrt) directory for details.
 

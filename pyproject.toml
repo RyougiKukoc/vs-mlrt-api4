@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vs-mlrt"
+version = "3.23.2"
+description = "VapourSynth ML runtime tools with release-backed TensorRT payloads"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "AmusementClub" }]
+dependencies = [
+    "vapoursynth>=75",
+    "numpy",
+    "onnx",
+    "onnxconverter-common",
+]
+
+[project.urls]
+"Source Code" = "https://github.com/AmusementClub/vs-mlrt"
+"Bug Tracker" = "https://github.com/AmusementClub/vs-mlrt/issues"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["scripts/vsmlrt.py"]
+
+[tool.hatch.build.targets.wheel.sources]
+"scripts" = ""
+
+[tool.hatch.build.hooks.custom]
+path = "packaging/vsmlrt_build.py"

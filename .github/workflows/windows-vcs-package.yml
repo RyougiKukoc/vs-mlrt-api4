@@ -1,0 +1,348 @@
+name: Build Windows VCS TRT package
+
+on:
+  push:
+    tags:
+      - cu121
+      - cu129
+  workflow_dispatch:
+    inputs:
+      cuda-flavor:
+        description: CUDA payload line to build
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - cu121
+          - cu129
+      publish:
+        description: Upload payload to the matching GitHub Release
+        type: boolean
+        required: false
+        default: false
+      model-tags:
+        description: Comma-separated upstream model release tags
+        type: string
+        required: false
+        default: model-20211209,model-20220923
+      contrib-model-tags:
+        description: Comma-separated upstream contributed model release tags
+        type: string
+        required: false
+        default: contrib-models
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda_flavor: [cu121, cu129]
+    runs-on: windows-2025
+
+    steps:
+      - name: Select CUDA flavor
+        id: select
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_CUDA_FLAVOR: ${{ inputs['cuda-flavor'] || '' }}
+          MATRIX_CUDA_FLAVOR: ${{ matrix.cuda_flavor }}
+        run: |
+          $shouldBuild = (
+            ($env:EVENT_NAME -eq "push" -and $env:REF_NAME -eq $env:MATRIX_CUDA_FLAVOR) -or
+            ($env:EVENT_NAME -eq "workflow_dispatch" -and (
+              $env:INPUT_CUDA_FLAVOR -eq "all" -or
+              $env:INPUT_CUDA_FLAVOR -eq $env:MATRIX_CUDA_FLAVOR
+            ))
+          )
+          "should_build=$($shouldBuild.ToString().ToLowerInvariant())" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+
+      - name: Checkout repo
+        if: steps.select.outputs.should_build == 'true'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve CUDA and TensorRT versions
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          if ("${{ matrix.cuda_flavor }}" -eq "cu121") {
+            $envLines = @(
+              "CUDA_VERSION=12.1.1",
+              "CUDA_MINOR=12.1",
+              "CUDA_ARCHS=75;86-real;89-real",
+              "TENSORRT_VERSION=8.6.1.6",
+              "TENSORRT_URL=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/secure/8.6.1/zip/TensorRT-8.6.1.6.Windows10.x86_64.cuda-12.0.zip",
+              "TENSORRT_LIBRARY_SUFFIX=",
+              "TENSORRT_OSS_REF=v8.6.1",
+              "TENSORRT_RTX_ENABLED=0"
+            )
+          } else {
+            $envLines = @(
+              "CUDA_VERSION=12.9.1",
+              "CUDA_MINOR=12.9",
+              "CUDA_ARCHS=75;86-real;89-real;120-real",
+              "TENSORRT_VERSION=11.1.0.106",
+              "TENSORRT_URL=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.1.0/zip/TensorRT-Enterprise-11.1.0.106-Windows-amd64-cuda-12.9-Release-external.zip",
+              "TENSORRT_LIBRARY_SUFFIX=_11",
+              "TENSORRT_OSS_REF=v11.1",
+              "TENSORRT_RTX_ENABLED=1",
+              "TENSORRT_RTX_VERSION=1.5.0.114",
+              "TENSORRT_RTX_URL=https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.5/TensorRT-RTX-1.5.0.114-Windows-amd64-cuda-12.9-Release-external.zip",
+              "TENSORRT_RTX_LIBRARY_SUFFIX=_1_5"
+            )
+          }
+          $envLines | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+
+      - name: Setup MSVC
+        if: steps.select.outputs.should_build == 'true'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup Ninja
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: python -m pip install ninja
+
+      - name: Cache CUDA
+        if: steps.select.outputs.should_build == 'true'
+        id: cache-cuda
+        uses: actions/cache@v5
+        with:
+          path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
+          key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}
+
+      - name: Setup CUDA
+        if: steps.select.outputs.should_build == 'true' && steps.cache-cuda.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          curl.exe -s -o cuda_installer.exe -L "https://developer.download.nvidia.com/compute/cuda/$env:CUDA_VERSION/network_installers/cuda_$($env:CUDA_VERSION)_windows_network.exe"
+          $components = @("nvcc", "cudart", "cuda_profiler_api", "crt", "nvptxcompiler", "nvvm")
+          $arguments = @("-s") + ($components | ForEach-Object { "$($_)_$($env:CUDA_MINOR)" })
+          Start-Process .\cuda_installer.exe -ArgumentList $arguments -Wait
+
+      - name: Download TensorRT
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          curl.exe -L -o trt.zip $env:TENSORRT_URL
+          Expand-Archive -LiteralPath trt.zip -DestinationPath . -Force
+          Move-Item -Path (Get-ChildItem -Directory TensorRT-* | Select-Object -First 1).FullName -Destination tensorrt
+
+      - name: Download TensorRT-RTX
+        if: steps.select.outputs.should_build == 'true' && matrix.cuda_flavor == 'cu129'
+        shell: pwsh
+        run: |
+          curl.exe -L -o trt-rtx.zip $env:TENSORRT_RTX_URL
+          Expand-Archive -LiteralPath trt-rtx.zip -DestinationPath . -Force
+          Move-Item -Path (Get-ChildItem -Directory TensorRT-RTX-* | Select-Object -First 1).FullName -Destination tensorrt-rtx
+
+      - name: Download VapourSynth R77 headers
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          curl.exe -s -o vs.zip -L https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R77.zip
+          Expand-Archive -LiteralPath vs.zip -DestinationPath vstrt -Force
+          Move-Item -Path (Get-ChildItem -Path vstrt -Directory -Filter "vapoursynth-*" | Select-Object -First 1).FullName -Destination vstrt\vapoursynth
+
+      - name: Download bundled models
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODEL_TAGS: ${{ inputs['model-tags'] || 'model-20211209,model-20220923' }}
+          CONTRIB_MODEL_TAGS: ${{ inputs['contrib-model-tags'] || 'contrib-models' }}
+        run: |
+          New-Item -ItemType Directory -Force model-assets payload\vsmlrt | Out-Null
+          $headers = @{
+            "Accept" = "application/vnd.github+json"
+            "User-Agent" = "vs-mlrt-vcs-package"
+          }
+          if ($env:GITHUB_TOKEN) {
+            $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+          }
+
+          $assetHeaders = @{
+            "Accept" = "application/octet-stream"
+            "User-Agent" = "vs-mlrt-vcs-package"
+          }
+          if ($env:GITHUB_TOKEN) {
+            $assetHeaders["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+          }
+
+          $tags = @($env:MODEL_TAGS, $env:CONTRIB_MODEL_TAGS) |
+            ForEach-Object { $_ -split "," } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+
+          foreach ($tag in $tags) {
+            $release = Invoke-RestMethod `
+              -Headers $headers `
+              -Uri "https://api.github.com/repos/AmusementClub/vs-mlrt/releases/tags/$tag"
+
+            foreach ($asset in $release.assets) {
+              $assetPath = "model-assets\$($asset.name)"
+              Invoke-WebRequest `
+                -Headers $assetHeaders `
+                -Uri $asset.url `
+                -OutFile $assetPath
+              7z x -y $assetPath "-opayload\vsmlrt"
+            }
+          }
+
+      - name: Configure vstrt
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          cmake -S vstrt -B vstrt\build -G Ninja -LA `
+            -D CMAKE_BUILD_TYPE=Release `
+            -D CMAKE_CXX_FLAGS="/EHsc /Wall /wd4100 /wd4625 /wd4626 /wd4710 /wd4711 /wd4820 /wd4996 /wd5026 /wd5027" `
+            -D CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -D CUDAToolkit_ROOT="$cudaPath" `
+            -D VAPOURSYNTH_INCLUDE_DIRECTORY="$pwd\vstrt\vapoursynth\include" `
+            -D TENSORRT_HOME="$pwd\tensorrt" `
+            -D USE_NVINFER_PLUGIN=ON `
+            -D TENSORRT_LIBRARY_SUFFIX="$env:TENSORRT_LIBRARY_SUFFIX"
+
+      - name: Build vstrt
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          cmake --build vstrt\build --config Release --verbose
+          cmake --install vstrt\build --prefix vstrt\install
+
+      - name: Configure vstrt_rtx
+        if: steps.select.outputs.should_build == 'true' && matrix.cuda_flavor == 'cu129'
+        shell: pwsh
+        run: |
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          cmake -S vstrt -B vstrt\build_rtx -G Ninja -LA `
+            -D CMAKE_BUILD_TYPE=Release `
+            -D CMAKE_CXX_FLAGS="/EHsc /Wall /wd4100 /wd4625 /wd4626 /wd4710 /wd4711 /wd4820 /wd4996 /wd5026 /wd5027" `
+            -D CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -D CUDAToolkit_ROOT="$cudaPath" `
+            -D VAPOURSYNTH_INCLUDE_DIRECTORY="$pwd\vstrt\vapoursynth\include" `
+            -D TENSORRT_HOME="$pwd\tensorrt-rtx" `
+            -D TENSORRT_LIBRARY_SUFFIX="$env:TENSORRT_RTX_LIBRARY_SUFFIX"
+
+      - name: Build vstrt_rtx
+        if: steps.select.outputs.should_build == 'true' && matrix.cuda_flavor == 'cu129'
+        shell: pwsh
+        run: |
+          cmake --build vstrt\build_rtx --config Release --verbose
+          cmake --install vstrt\build_rtx --prefix vstrt\install_rtx
+
+      - name: Checkout TensorRT OSS
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: git clone --depth 1 --branch $env:TENSORRT_OSS_REF https://github.com/NVIDIA/TensorRT.git tensorrt-oss
+
+      - name: Build custom trtexec
+        if: steps.select.outputs.should_build == 'true'
+        id: trtexec
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Copy-Item vstrt\trtexec\CMakeLists.txt tensorrt-oss\samples\trtexec\CMakeLists.txt -Force
+          Copy-Item vstrt\trtexec\*.cpp tensorrt-oss\samples\trtexec -Force
+          Copy-Item vstrt\longpath.manifest tensorrt-oss\samples\trtexec -Force
+          Copy-Item vstrt\trtexec\trtexec.patch tensorrt-oss\trtexec.patch -Force
+          Push-Location tensorrt-oss
+          git apply trtexec.patch --verbose
+          Pop-Location
+          New-Item -ItemType Directory -Force tensorrt-oss\include\nlohmann | Out-Null
+          curl.exe -L -o tensorrt-oss\include\nlohmann\json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/tags/v3.11.3/single_include/nlohmann/json.hpp
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          $cudaArchitectures = $env:CUDA_ARCHS -replace ';', ';'
+          cmake -S tensorrt-oss\samples\trtexec -B vstrt\build_trtexec -G Ninja `
+            -D CMAKE_BUILD_TYPE=Release `
+            -D CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -D CUDAToolkit_ROOT="$cudaPath" `
+            -D CMAKE_UNITY_BUILD=ON `
+            -D CMAKE_UNITY_BUILD_BATCH_SIZE=0 `
+            -D CMAKE_CXX_STANDARD=20 `
+            -D CMAKE_CUDA_ARCHITECTURES="$cudaArchitectures"
+          cmake --build vstrt\build_trtexec --verbose
+          cmake --install vstrt\build_trtexec --prefix vstrt\trtexec-install
+
+      - name: Assemble payload
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          $pluginDir = "payload\vsmlrt"
+          $cudaDir = "$pluginDir\vsmlrt-cuda"
+          New-Item -ItemType Directory -Force $cudaDir | Out-Null
+          Copy-Item vstrt\install\bin\vstrt.dll $pluginDir
+          if (Test-Path vstrt\install_rtx\bin\vstrt_rtx.dll) {
+            Copy-Item vstrt\install_rtx\bin\vstrt_rtx.dll $pluginDir
+          }
+          Copy-Item tensorrt\bin\*.dll $cudaDir
+          if (Test-Path tensorrt-rtx\bin) {
+            Copy-Item tensorrt-rtx\bin\*.dll $cudaDir
+            Copy-Item tensorrt-rtx\bin\tensorrt_rtx.exe $cudaDir
+          }
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          foreach ($runtimePath in @("$cudaPath\bin\*.dll", "$cudaPath\bin\x64\*.dll")) {
+            Copy-Item $runtimePath $cudaDir -ErrorAction SilentlyContinue
+          }
+          if (Test-Path vstrt\trtexec-install\bin\trtexec.exe) {
+            Copy-Item vstrt\trtexec-install\bin\trtexec.exe $cudaDir
+          } else {
+            Copy-Item tensorrt\bin\trtexec.exe $cudaDir
+          }
+          $manifest = "[VapourSynth Manifest V1]`nvstrt`n"
+          if (Test-Path "$pluginDir\vstrt_rtx.dll") {
+            $manifest += "vstrt_rtx`n"
+          }
+          Set-Content -Path "$pluginDir\manifest.vs" -Value $manifest -NoNewline -Encoding ascii
+
+      - name: Inspect payload layout
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          $required = @(
+            "payload\vsmlrt\manifest.vs",
+            "payload\vsmlrt\vstrt.dll",
+            "payload\vsmlrt\vsmlrt-cuda\trtexec.exe",
+            "payload\vsmlrt\models\dpir"
+          )
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            $required += "payload\vsmlrt\vstrt_rtx.dll"
+          }
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Missing payload item: $path"
+            }
+          }
+          if (Test-Path payload\vapoursynth) {
+            throw "Release payload must be rooted at vsmlrt/, not vapoursynth/."
+          }
+
+      - name: Package payload
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload\*
+
+      - name: Upload payload artifact
+        if: steps.select.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}
+          path: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip
+
+      - name: Release payload
+        if: steps.select.outputs.should_build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.cuda_flavor }}
+          files: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+          prerelease: true

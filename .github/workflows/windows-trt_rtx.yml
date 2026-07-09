@@ -62,7 +62,7 @@ jobs:
 
     - name: Download VapourSynth headers
       run: |
-        curl -s -o vs.zip -L https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R54.zip
+        curl -s -o vs.zip -L https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R77.zip
         unzip -q vs.zip
         mv vapoursynth-*/ vapoursynth/
 
