@@ -115,16 +115,38 @@ jobs:
         uses: actions/cache@v5
         with:
           path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
-          key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}
+          key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}-toolkit-v2
 
       - name: Setup CUDA
-        if: steps.select.outputs.should_build == 'true' && steps.cache-cuda.outputs.cache-hit != 'true'
+        if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          curl.exe -s -o cuda_installer.exe -L "https://developer.download.nvidia.com/compute/cuda/$env:CUDA_VERSION/network_installers/cuda_$($env:CUDA_VERSION)_windows_network.exe"
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          $nvcc = Join-Path $cudaPath "bin\nvcc.exe"
+          if (Test-Path -LiteralPath $nvcc) {
+            Write-Host "Using cached CUDA toolkit at $cudaPath"
+            & $nvcc --version
+            "CUDA_PATH=$cudaPath" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+            exit 0
+          }
+
+          curl.exe -fL -o cuda_installer.exe "https://developer.download.nvidia.com/compute/cuda/$env:CUDA_VERSION/network_installers/cuda_$($env:CUDA_VERSION)_windows_network.exe"
           $components = @("nvcc", "cudart", "cuda_profiler_api", "crt", "nvptxcompiler", "nvvm")
           $arguments = @("-s") + ($components | ForEach-Object { "$($_)_$($env:CUDA_MINOR)" })
-          Start-Process .\cuda_installer.exe -ArgumentList $arguments -Wait
+          Write-Host "Installing CUDA components: $($arguments -join ' ')"
+          & .\cuda_installer.exe @arguments
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0 -and $exitCode -ne 3010) {
+            throw "CUDA installer failed with exit code $exitCode"
+          }
+          if (-not (Test-Path -LiteralPath $nvcc)) {
+            Write-Host "CUDA directories found after install attempt:"
+            Get-ChildItem -Path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" -Recurse -Filter nvcc.exe -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
+            throw "CUDA installer completed but nvcc was not found at $nvcc"
+          }
+          & $nvcc --version
+          "CUDA_PATH=$cudaPath" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
 
       - name: Download TensorRT
         if: steps.select.outputs.should_build == 'true'
