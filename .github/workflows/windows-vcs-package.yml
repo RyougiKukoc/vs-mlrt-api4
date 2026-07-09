@@ -119,35 +119,48 @@ jobs:
         id: cache-cuda
         uses: actions/cache@v5
         with:
-          path: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA
-          key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}-jimver-v1
+          path: cuda-redist/${{ matrix.cuda_flavor }}
+          key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}-redist-v1
 
       - name: Setup CUDA
-        if: steps.select.outputs.should_build == 'true' && steps.cache-cuda.outputs.cache-hit != 'true'
-        uses: Jimver/cuda-toolkit@v0.2.35
-        with:
-          cuda: ${{ steps.versions.outputs.cuda_version }}
-          method: network
-          sub-packages: '["nvcc","cudart","cuda_profiler_api","crt","nvptxcompiler","nvvm"]'
-          log-file-suffix: ${{ matrix.cuda_flavor }}.txt
-
-      - name: Verify CUDA
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          $cudaPath = $env:CUDA_PATH
-          if (-not $cudaPath) {
-            $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
-          }
+          $cudaPath = Join-Path $pwd "cuda-redist\${{ matrix.cuda_flavor }}"
           $nvcc = Join-Path $cudaPath "bin\nvcc.exe"
+
+          if (-not (Test-Path -LiteralPath $nvcc)) {
+            $baseUrl = "https://developer.download.nvidia.com/compute/cuda/redist"
+            $manifestPath = "cuda-redistrib.json"
+            curl.exe -fL -o $manifestPath "$baseUrl/redistrib_$env:CUDA_VERSION.json"
+            $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+            $packages = @("cuda_cccl", "cuda_cudart", "cuda_nvcc", "cuda_nvtx")
+            New-Item -ItemType Directory -Force -Path $cudaPath, cuda-downloads | Out-Null
+
+            foreach ($package in $packages) {
+              $entry = $manifest.$package.'windows-x86_64'
+              if (-not $entry) {
+                throw "CUDA redistrib package $package is unavailable for Windows x86_64"
+              }
+              $archive = "cuda-downloads\$package.zip"
+              $extract = "cuda-downloads\$package"
+              curl.exe -fL -o $archive "$baseUrl/$($entry.relative_path)"
+              7z x -y $archive "-o$extract"
+              $root = Get-ChildItem -Path $extract -Directory | Select-Object -First 1
+              Copy-Item -Path "$($root.FullName)\*" -Destination $cudaPath -Recurse -Force
+            }
+          }
+
           if (-not (Test-Path -LiteralPath $nvcc)) {
             Write-Host "CUDA directories found:"
-            Get-ChildItem -Path "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" -Recurse -Filter nvcc.exe -ErrorAction SilentlyContinue |
+            Get-ChildItem -Path $cudaPath -Recurse -Filter nvcc.exe -ErrorAction SilentlyContinue |
               Select-Object -ExpandProperty FullName
             throw "nvcc was not found at $nvcc"
           }
           & $nvcc --version
           "CUDA_PATH=$cudaPath" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          "$cudaPath\bin" | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
+          "$cudaPath\nvvm\bin" | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
 
       - name: Download TensorRT
         if: steps.select.outputs.should_build == 'true'
@@ -222,7 +235,7 @@ jobs:
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          $cudaPath = $env:CUDA_PATH
           cmake -S vstrt -B vstrt\build -G Ninja -LA `
             -D CMAKE_BUILD_TYPE=Release `
             -D CMAKE_CXX_FLAGS="/EHsc /Wall /wd4100 /wd4625 /wd4626 /wd4710 /wd4711 /wd4820 /wd4996 /wd5026 /wd5027" `
@@ -244,7 +257,7 @@ jobs:
         if: steps.select.outputs.should_build == 'true' && matrix.cuda_flavor == 'cu129'
         shell: pwsh
         run: |
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          $cudaPath = $env:CUDA_PATH
           cmake -S vstrt -B vstrt\build_rtx -G Ninja -LA `
             -D CMAKE_BUILD_TYPE=Release `
             -D CMAKE_CXX_FLAGS="/EHsc /Wall /wd4100 /wd4625 /wd4626 /wd4710 /wd4711 /wd4820 /wd4996 /wd5026 /wd5027" `
@@ -281,7 +294,7 @@ jobs:
           Pop-Location
           New-Item -ItemType Directory -Force tensorrt-oss\include\nlohmann | Out-Null
           curl.exe -L -o tensorrt-oss\include\nlohmann\json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/tags/v3.11.3/single_include/nlohmann/json.hpp
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          $cudaPath = $env:CUDA_PATH
           $cudaArchitectures = $env:CUDA_ARCHS -replace ';', ';'
           cmake -S tensorrt-oss\samples\trtexec -B vstrt\build_trtexec -G Ninja `
             -D CMAKE_BUILD_TYPE=Release `
@@ -310,7 +323,7 @@ jobs:
             Copy-Item tensorrt-rtx\bin\*.dll $cudaDir
             Copy-Item tensorrt-rtx\bin\tensorrt_rtx.exe $cudaDir
           }
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_MINOR"
+          $cudaPath = $env:CUDA_PATH
           foreach ($runtimePath in @("$cudaPath\bin\*.dll", "$cudaPath\bin\x64\*.dll")) {
             Copy-Item $runtimePath $cudaDir -ErrorAction SilentlyContinue
           }
