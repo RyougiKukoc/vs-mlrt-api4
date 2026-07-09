@@ -57,6 +57,7 @@ jobs:
         run: |
           @'
           import os
+          import re
           import site
           import subprocess
           import sys
@@ -183,6 +184,35 @@ jobs:
                   raise SystemExit("Missing PE imports:\n" + "\n".join(sorted(set(missing))))
               return sorted(set(missing_driver))
 
+          def print_dll_string_refs(path):
+              data = path.read_bytes()
+              refs = sorted(
+                  set(
+                      match.group(0).decode("ascii", errors="ignore").lower()
+                      for match in re.finditer(rb"[A-Za-z0-9_.+-]+\.dll", data)
+                  )
+              )
+              tokens = (
+                  "cublas",
+                  "cuda",
+                  "cudnn",
+                  "cufft",
+                  "cudart",
+                  "nvinfer",
+                  "nvrtc",
+                  "nv",
+                  "onnx",
+                  "protobuf",
+                  "zlib",
+              )
+              interesting = [ref for ref in refs if any(token in ref for token in tokens)]
+              print(f"DLL string refs in {path.name}:")
+              for ref in interesting:
+                  status = "found" if resolve_import(ref) is not None else "missing"
+                  if ref == "nvcuda.dll":
+                      status = "driver"
+                  print(f"  {status}: {ref}")
+
           pe_targets = [
               manifest.parent / "vstrt.dll",
               cuda_dir / f"nvinfer{trt_suffix}.dll",
@@ -199,6 +229,7 @@ jobs:
           if missing_driver:
               print("Allowed missing NVIDIA driver imports on GitHub runner:")
               print("\n".join(missing_driver))
+          print_dll_string_refs(cuda_dir / f"nvinfer_plugin{trt_suffix}.dll")
 
           load_script = f"""
           import vapoursynth as vs
