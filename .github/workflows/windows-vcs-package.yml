@@ -158,7 +158,7 @@ jobs:
           MODEL_TAGS: ${{ inputs['model-tags'] || 'model-20211209,model-20220923' }}
           CONTRIB_MODEL_TAGS: ${{ inputs['contrib-model-tags'] || 'contrib-models' }}
         run: |
-          New-Item -ItemType Directory -Force model-assets payload\vsmlrt | Out-Null
+          New-Item -ItemType Directory -Force -Path model-assets, payload\vsmlrt | Out-Null
           $headers = @{
             "Accept" = "application/vnd.github+json"
             "User-Agent" = "vs-mlrt-vcs-package"
