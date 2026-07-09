@@ -325,74 +325,111 @@ jobs:
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          $pluginDir = "payload\vsmlrt"
-          $cudaDir = "$pluginDir\vsmlrt-cuda"
-          New-Item -ItemType Directory -Force $cudaDir | Out-Null
-          Copy-Item vstrt\install\bin\vstrt.dll $pluginDir
-          if (Test-Path vstrt\install_rtx\bin\vstrt_rtx.dll) {
-            Copy-Item vstrt\install_rtx\bin\vstrt_rtx.dll $pluginDir
+          function Copy-DllsFromPackage($packageDir, $destinationDir) {
+            foreach ($runtimePath in @("$packageDir\bin\*.dll", "$packageDir\lib\*.dll")) {
+              Copy-Item $runtimePath $destinationDir -ErrorAction SilentlyContinue
+            }
           }
-          Copy-Item tensorrt\bin\*.dll $cudaDir
-          if (Test-Path tensorrt-rtx\bin) {
-            Copy-Item tensorrt-rtx\bin\*.dll $cudaDir
-            Copy-Item tensorrt-rtx\bin\tensorrt_rtx.exe $cudaDir
+
+          $basePluginDir = "payload-base\vsmlrt"
+          $baseCudaDir = "$basePluginDir\vsmlrt-cuda"
+          $modelsPluginDir = "payload-models\vsmlrt"
+          New-Item -ItemType Directory -Force $baseCudaDir, $modelsPluginDir | Out-Null
+
+          Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
+          Copy-DllsFromPackage "tensorrt" $baseCudaDir
+
+          if (Test-Path "payload\vsmlrt\models") {
+            Copy-Item -LiteralPath "payload\vsmlrt\models" -Destination $modelsPluginDir -Recurse -Force
+          } else {
+            throw "Bundled models were not assembled at payload\vsmlrt\models"
           }
+
           $cudaPath = $env:CUDA_PATH
           foreach ($runtimePath in @("$cudaPath\bin\*.dll", "$cudaPath\bin\x64\*.dll")) {
-            Copy-Item $runtimePath $cudaDir -ErrorAction SilentlyContinue
+            Copy-Item $runtimePath $baseCudaDir -ErrorAction SilentlyContinue
           }
           if (Test-Path vstrt\trtexec-install\bin\trtexec.exe) {
-            Copy-Item vstrt\trtexec-install\bin\trtexec.exe $cudaDir
+            Copy-Item vstrt\trtexec-install\bin\trtexec.exe $baseCudaDir
           } else {
-            Copy-Item tensorrt\bin\trtexec.exe $cudaDir
+            Copy-Item tensorrt\bin\trtexec.exe $baseCudaDir
           }
-          $manifest = "[VapourSynth Manifest V1]`nvstrt`n"
-          if (Test-Path "$pluginDir\vstrt_rtx.dll") {
-            $manifest += "vstrt_rtx`n"
+
+          Set-Content -Path "$basePluginDir\manifest.vs" -Value "[VapourSynth Manifest V1]`nvstrt`n" -NoNewline -Encoding ascii
+
+          if (Test-Path vstrt\install_rtx\bin\vstrt_rtx.dll) {
+            $rtxPluginDir = "payload-rtx\vsmlrt"
+            $rtxCudaDir = "$rtxPluginDir\vsmlrt-cuda"
+            New-Item -ItemType Directory -Force $rtxCudaDir | Out-Null
+            Copy-Item vstrt\install_rtx\bin\vstrt_rtx.dll $rtxPluginDir
+            Copy-DllsFromPackage "tensorrt-rtx" $rtxCudaDir
+            Copy-Item tensorrt-rtx\bin\tensorrt_rtx.exe $rtxCudaDir -ErrorAction SilentlyContinue
+            Set-Content -Path "$rtxPluginDir\manifest.vs" -Value "[VapourSynth Manifest V1]`nvstrt`nvstrt_rtx`n" -NoNewline -Encoding ascii
           }
-          Set-Content -Path "$pluginDir\manifest.vs" -Value $manifest -NoNewline -Encoding ascii
 
       - name: Inspect payload layout
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
+          $trtSuffix = ""
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            $trtSuffix = "_11"
+          }
           $required = @(
-            "payload\vsmlrt\manifest.vs",
-            "payload\vsmlrt\vstrt.dll",
-            "payload\vsmlrt\vsmlrt-cuda\trtexec.exe",
-            "payload\vsmlrt\models\dpir"
+            "payload-base\vsmlrt\manifest.vs",
+            "payload-base\vsmlrt\vstrt.dll",
+            "payload-base\vsmlrt\vsmlrt-cuda\nvinfer$trtSuffix.dll",
+            "payload-base\vsmlrt\vsmlrt-cuda\nvinfer_plugin$trtSuffix.dll",
+            "payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe",
+            "payload-models\vsmlrt\models\dpir"
           )
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
-            $required += "payload\vsmlrt\vstrt_rtx.dll"
+            $required += "payload-rtx\vsmlrt\manifest.vs"
+            $required += "payload-rtx\vsmlrt\vstrt_rtx.dll"
+            $required += "payload-rtx\vsmlrt\vsmlrt-cuda\tensorrt_rtx_1_5.dll"
           }
           foreach ($path in $required) {
             if (-not (Test-Path $path)) {
               throw "Missing payload item: $path"
             }
           }
-          if (Test-Path payload\vapoursynth) {
-            throw "Release payload must be rooted at vsmlrt/, not vapoursynth/."
+          foreach ($path in @("payload-base\vapoursynth", "payload-models\vapoursynth", "payload-rtx\vapoursynth")) {
+            if (Test-Path $path) {
+              throw "Release payload must be rooted at vsmlrt/, not vapoursynth/: $path"
+            }
           }
 
       - name: Package payload
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload\*
+          7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload-base\*
+          7z a -tzip -mx=9 "vs-mlrt-windows-x64-models.zip" .\payload-models\*
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip" .\payload-rtx\*
+          }
+          Get-ChildItem vs-mlrt-windows-x64-*.zip |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
+          foreach ($asset in Get-ChildItem vs-mlrt-windows-x64-*.zip) {
+            if ($asset.Length -ge 2147483648) {
+              throw "Release asset exceeds GitHub's 2 GiB limit: $($asset.Name) ($($asset.Length) bytes)"
+            }
+          }
 
       - name: Upload payload artifact
         if: steps.select.outputs.should_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}
-          path: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip
+          path: vs-mlrt-windows-x64-*.zip
 
       - name: Release payload
         if: steps.select.outputs.should_build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ matrix.cuda_flavor }}
-          files: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip
+          files: vs-mlrt-windows-x64-*.zip
           fail_on_unmatched_files: true
           generate_release_notes: false
           prerelease: true

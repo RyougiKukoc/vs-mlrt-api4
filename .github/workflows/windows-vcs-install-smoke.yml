@@ -72,15 +72,19 @@ jobs:
               return None
 
           flavor = os.environ["EXPECTED_CUDA_FLAVOR"]
+          trt_suffix = "_11" if flavor == "cu129" else ""
           required = [
               Path("vsmlrt.py"),
               Path("vapoursynth/plugins/vsmlrt/manifest.vs"),
               Path("vapoursynth/plugins/vsmlrt/vstrt.dll"),
+              Path(f"vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvinfer{trt_suffix}.dll"),
+              Path(f"vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvinfer_plugin{trt_suffix}.dll"),
               Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/trtexec.exe"),
               Path("vapoursynth/plugins/vsmlrt/models/dpir"),
           ]
           if flavor == "cu129":
               required.append(Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"))
+              required.append(Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/tensorrt_rtx_1_5.dll"))
 
           missing = [str(rel) for rel in required if find(rel) is None]
           if missing:

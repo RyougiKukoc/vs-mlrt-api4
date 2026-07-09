@@ -18,12 +18,14 @@ pip install "vs-mlrt @ git+https://github.com/<owner>/vs-mlrt.git@cu129"
 pip install "vs-mlrt @ git+https://github.com/<owner>/vs-mlrt.git@cu121"
 ```
 
-The build hook downloads the matching release asset:
+The build hook downloads and overlays the matching release assets:
 
-- `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip`
-- `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`
+- `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip` and `vs-mlrt-windows-x64-models.zip`
+- `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`, `vs-mlrt-windows-x64-models.zip`, and `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`
 
-Each zip is rooted at `vsmlrt/` and contains `manifest.vs`, `vstrt.dll`, optional `vstrt_rtx.dll`, `vsmlrt-cuda/`, and the bundled `models/` directory. Manual installs can copy or extract that `vsmlrt/` directory under the VapourSynth plugin directory. VCS installs map the same directory into `site-packages/vapoursynth/plugins/vsmlrt` and install `vsmlrt.py` as the importable wrapper module.
+Each zip is rooted at `vsmlrt/`. The TensorRT zip contains `manifest.vs`, `vstrt.dll`, and the regular TensorRT runtime under `vsmlrt-cuda/`. The models zip contains the bundled `models/` directory. The cu129 RTX overlay contains `vstrt_rtx.dll`, `tensorrt_rtx_1_5.dll`, and a manifest that enables both `vstrt` and `vstrt_rtx`; extract it after the base TensorRT zip for manual installs. VCS installs perform the overlay automatically into `site-packages/vapoursynth/plugins/vsmlrt` and install `vsmlrt.py` as the importable wrapper module.
+
+The payload is split because GitHub Release assets must stay below 2 GiB, while the full cu129 TensorRT + TensorRT-RTX + model bundle exceeds that limit.
 
 The model directory is assembled in CI from the upstream `model-20211209`, `model-20220923`, and `contrib-models` releases unless workflow inputs override those tags.
 
@@ -43,5 +45,5 @@ The CUDA-minor-sensitive pieces are in CI/package assembly:
 
 - CUDA installer version and component suffix, such as `12.1.1` with `nvcc_12.1`.
 - `CMAKE_CUDA_ARCHITECTURES`; `cu121` omits Blackwell `120-real`, while `cu129` includes it.
-- Runtime DLL payload under `vsmlrt/vsmlrt-cuda/` in the release zip.
+- Runtime DLL payload under `vsmlrt/vsmlrt-cuda/` in the TensorRT and optional TensorRT-RTX release zips.
 - TensorRT download URLs and `TENSORRT_LIBRARY_SUFFIX`, because TRT 8.6 uses unversioned Windows DLL names while TRT 11 uses names such as `nvinfer_11.dll`.
