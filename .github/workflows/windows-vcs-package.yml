@@ -340,10 +340,19 @@ jobs:
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
 
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
-            $builderCudaDir = "payload-builder\vsmlrt\vsmlrt-cuda"
-            New-Item -ItemType Directory -Force $builderCudaDir | Out-Null
-            Get-ChildItem -Path $baseCudaDir -Filter "nvinfer_builder_resource*.dll" |
-              Move-Item -Destination $builderCudaDir
+            $trtCoreCudaDir = "payload-trt-core\vsmlrt\vsmlrt-cuda"
+            $trtPluginCudaDir = "payload-trt-plugin\vsmlrt\vsmlrt-cuda"
+            $trtExtraCudaDir = "payload-trt-extra\vsmlrt\vsmlrt-cuda"
+            New-Item -ItemType Directory -Force $trtCoreCudaDir, $trtPluginCudaDir, $trtExtraCudaDir | Out-Null
+            foreach ($dll in Get-ChildItem -Path $baseCudaDir -Filter "*.dll") {
+              if ($dll.Name -eq "nvinfer_11.dll") {
+                Move-Item -LiteralPath $dll.FullName -Destination $trtCoreCudaDir
+              } elseif ($dll.Name -eq "nvinfer_plugin_11.dll") {
+                Move-Item -LiteralPath $dll.FullName -Destination $trtPluginCudaDir
+              } else {
+                Move-Item -LiteralPath $dll.FullName -Destination $trtExtraCudaDir
+              }
+            }
           }
 
           if (Test-Path "payload\vsmlrt\models") {
@@ -385,23 +394,26 @@ jobs:
           $required = @(
             "payload-base\vsmlrt\manifest.vs",
             "payload-base\vsmlrt\vstrt.dll",
-            "payload-base\vsmlrt\vsmlrt-cuda\nvinfer$trtSuffix.dll",
-            "payload-base\vsmlrt\vsmlrt-cuda\nvinfer_plugin$trtSuffix.dll",
             "payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe",
             "payload-models\vsmlrt\models\dpir"
           )
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
-            $required += "payload-builder\vsmlrt\vsmlrt-cuda\nvinfer_builder_resource_11.dll"
+            $required += "payload-trt-core\vsmlrt\vsmlrt-cuda\nvinfer_11.dll"
+            $required += "payload-trt-plugin\vsmlrt\vsmlrt-cuda\nvinfer_plugin_11.dll"
+            $required += "payload-trt-extra\vsmlrt\vsmlrt-cuda\nvonnxparser_11.dll"
             $required += "payload-rtx\vsmlrt\manifest.vs"
             $required += "payload-rtx\vsmlrt\vstrt_rtx.dll"
             $required += "payload-rtx\vsmlrt\vsmlrt-cuda\tensorrt_rtx_1_5.dll"
+          } else {
+            $required += "payload-base\vsmlrt\vsmlrt-cuda\nvinfer$trtSuffix.dll"
+            $required += "payload-base\vsmlrt\vsmlrt-cuda\nvinfer_plugin$trtSuffix.dll"
           }
           foreach ($path in $required) {
             if (-not (Test-Path $path)) {
               throw "Missing payload item: $path"
             }
           }
-          foreach ($path in @("payload-base\vapoursynth", "payload-models\vapoursynth", "payload-rtx\vapoursynth")) {
+          foreach ($path in @("payload-base\vapoursynth", "payload-models\vapoursynth", "payload-trt-core\vapoursynth", "payload-trt-plugin\vapoursynth", "payload-trt-extra\vapoursynth", "payload-rtx\vapoursynth")) {
             if (Test-Path $path) {
               throw "Release payload must be rooted at vsmlrt/, not vapoursynth/: $path"
             }
@@ -414,7 +426,9 @@ jobs:
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload-base\*
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-models.zip" .\payload-models\*
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
-            7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-builder-cu129.zip" .\payload-builder\*
+            7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-core-cu129.zip" .\payload-trt-core\*
+            7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip" .\payload-trt-plugin\*
+            7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-extra-cu129.zip" .\payload-trt-extra\*
             7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip" .\payload-rtx\*
           }
           Get-ChildItem vs-mlrt-windows-x64-*.zip |
