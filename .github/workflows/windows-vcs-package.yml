@@ -82,7 +82,8 @@ jobs:
               "TENSORRT_URL=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/secure/8.6.1/zip/TensorRT-8.6.1.6.Windows10.x86_64.cuda-12.0.zip",
               "TENSORRT_LIBRARY_SUFFIX=",
               "TENSORRT_OSS_REF=v8.6.1",
-              "TENSORRT_RTX_ENABLED=0"
+              "TENSORRT_RTX_ENABLED=0",
+              "CUDNN_URL=https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-8.9.7.29_cuda12-archive.zip"
             )
           } else {
             $envLines = @(
@@ -96,7 +97,8 @@ jobs:
               "TENSORRT_RTX_ENABLED=1",
               "TENSORRT_RTX_VERSION=1.5.0.114",
               "TENSORRT_RTX_URL=https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.5/TensorRT-RTX-1.5.0.114-Windows-amd64-cuda-12.9-Release-external.zip",
-              "TENSORRT_RTX_LIBRARY_SUFFIX=_1_5"
+              "TENSORRT_RTX_LIBRARY_SUFFIX=_1_5",
+              "CUDNN_URL=https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.19.0.56_cuda12-archive.zip"
             )
           }
           $envLines | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
@@ -134,7 +136,17 @@ jobs:
             $manifestPath = "cuda-redistrib.json"
             curl.exe -fL -o $manifestPath "$baseUrl/redistrib_$env:CUDA_VERSION.json"
             $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
-            $packages = @("cuda_cccl", "cuda_cudart", "cuda_nvcc", "cuda_nvtx")
+            $packages = @(
+              "cuda_cccl",
+              "cuda_cudart",
+              "cuda_cupti",
+              "cuda_nvcc",
+              "cuda_nvrtc",
+              "cuda_nvtx",
+              "libcublas",
+              "libcufft",
+              "libnvjitlink"
+            )
             New-Item -ItemType Directory -Force -Path $cudaPath, cuda-downloads | Out-Null
 
             foreach ($package in $packages) {
@@ -177,6 +189,14 @@ jobs:
           curl.exe -L -o trt-rtx.zip $env:TENSORRT_RTX_URL
           Expand-Archive -LiteralPath trt-rtx.zip -DestinationPath . -Force
           Move-Item -Path (Get-ChildItem -Directory TensorRT-RTX-* | Select-Object -First 1).FullName -Destination tensorrt-rtx
+
+      - name: Download cuDNN
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          curl.exe -L -o cudnn.zip $env:CUDNN_URL
+          Expand-Archive -LiteralPath cudnn.zip -DestinationPath . -Force
+          Move-Item -Path (Get-ChildItem -Directory cudnn-windows-* | Select-Object -First 1).FullName -Destination cudnn
 
       - name: Download VapourSynth R77 headers
         if: steps.select.outputs.should_build == 'true'
@@ -326,18 +346,21 @@ jobs:
         shell: pwsh
         run: |
           function Copy-DllsFromPackage($packageDir, $destinationDir) {
-            foreach ($runtimePath in @("$packageDir\bin\*.dll", "$packageDir\lib\*.dll")) {
+            foreach ($runtimePath in @("$packageDir\bin\*.dll", "$packageDir\bin\x64\*.dll", "$packageDir\lib\*.dll", "$packageDir\lib\x64\*.dll")) {
               Copy-Item $runtimePath $destinationDir -ErrorAction SilentlyContinue
             }
           }
 
           $basePluginDir = "payload-base\vsmlrt"
           $baseCudaDir = "$basePluginDir\vsmlrt-cuda"
+          $cudaPayloadDir = "payload-cuda\vsmlrt\vsmlrt-cuda"
+          $cudnnPayloadDir = "payload-cudnn\vsmlrt\vsmlrt-cuda"
           $modelsPluginDir = "payload-models\vsmlrt"
-          New-Item -ItemType Directory -Force $baseCudaDir, $modelsPluginDir | Out-Null
+          New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir, $modelsPluginDir | Out-Null
 
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
+          Copy-DllsFromPackage "cudnn" $cudnnPayloadDir
 
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $trtCoreCudaDir = "payload-trt-core\vsmlrt\vsmlrt-cuda"
@@ -362,8 +385,8 @@ jobs:
           }
 
           $cudaPath = $env:CUDA_PATH
-          foreach ($runtimePath in @("$cudaPath\bin\*.dll", "$cudaPath\bin\x64\*.dll")) {
-            Copy-Item $runtimePath $baseCudaDir -ErrorAction SilentlyContinue
+          foreach ($runtimePath in @("$cudaPath\bin\*.dll", "$cudaPath\bin\x64\*.dll", "$cudaPath\extras\CUPTI\lib64\*.dll", "$cudaPath\nvvm\bin\*.dll")) {
+            Copy-Item $runtimePath $cudaPayloadDir -ErrorAction SilentlyContinue
           }
           if (Test-Path vstrt\trtexec-install\bin\trtexec.exe) {
             Copy-Item vstrt\trtexec-install\bin\trtexec.exe $baseCudaDir
@@ -395,6 +418,9 @@ jobs:
             "payload-base\vsmlrt\manifest.vs",
             "payload-base\vsmlrt\vstrt.dll",
             "payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe",
+            "payload-cuda\vsmlrt\vsmlrt-cuda\cublas64_12.dll",
+            "payload-cuda\vsmlrt\vsmlrt-cuda\cublasLt64_12.dll",
+            "payload-cuda\vsmlrt\vsmlrt-cuda\cudart64_12.dll",
             "payload-models\vsmlrt\models\dpir"
           )
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
@@ -413,7 +439,12 @@ jobs:
               throw "Missing payload item: $path"
             }
           }
-          foreach ($path in @("payload-base\vapoursynth", "payload-models\vapoursynth", "payload-trt-core\vapoursynth", "payload-trt-plugin\vapoursynth", "payload-trt-extra\vapoursynth", "payload-rtx\vapoursynth")) {
+          foreach ($glob in @("payload-cuda\vsmlrt\vsmlrt-cuda\nvrtc*.dll", "payload-cudnn\vsmlrt\vsmlrt-cuda\cudnn*.dll")) {
+            if (-not (Test-Path $glob)) {
+              throw "Missing payload item matching: $glob"
+            }
+          }
+          foreach ($path in @("payload-base\vapoursynth", "payload-cuda\vapoursynth", "payload-cudnn\vapoursynth", "payload-models\vapoursynth", "payload-trt-core\vapoursynth", "payload-trt-plugin\vapoursynth", "payload-trt-extra\vapoursynth", "payload-rtx\vapoursynth")) {
             if (Test-Path $path) {
               throw "Release payload must be rooted at vsmlrt/, not vapoursynth/: $path"
             }
@@ -424,6 +455,8 @@ jobs:
         shell: pwsh
         run: |
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload-base\*
+          7z a -tzip -mx=9 "vs-mlrt-windows-x64-cuda-${{ matrix.cuda_flavor }}.zip" .\payload-cuda\*
+          7z a -tzip -mx=9 "vs-mlrt-windows-x64-cudnn-${{ matrix.cuda_flavor }}.zip" .\payload-cudnn\*
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-models.zip" .\payload-models\*
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-core-cu129.zip" .\payload-trt-core\*

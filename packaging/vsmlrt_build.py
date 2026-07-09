@@ -75,6 +75,8 @@ class CustomBuildHook(BuildHookInterface):
         repo = os.environ.get("VSMLRT_RELEASE_REPO") or self._detect_github_repo()
         assets = [
             f"vs-mlrt-windows-x64-tensorrt-{cuda_tag}.zip",
+            f"vs-mlrt-windows-x64-cuda-{cuda_tag}.zip",
+            f"vs-mlrt-windows-x64-cudnn-{cuda_tag}.zip",
             "vs-mlrt-windows-x64-models.zip",
         ]
         if cuda_tag == "cu129":

@@ -20,10 +20,10 @@ pip install "vs-mlrt @ git+https://github.com/<owner>/vs-mlrt.git@cu121"
 
 The build hook downloads and overlays the matching release assets:
 
-- `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip` and `vs-mlrt-windows-x64-models.zip`
-- `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, `vs-mlrt-windows-x64-models.zip`, and `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`
+- `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, and `vs-mlrt-windows-x64-models.zip`
+- `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`, `vs-mlrt-windows-x64-cuda-cu129.zip`, `vs-mlrt-windows-x64-cudnn-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, `vs-mlrt-windows-x64-models.zip`, and `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`
 
-Each zip is rooted at `vsmlrt/`. The TensorRT zip contains `manifest.vs`, `vstrt.dll`, `trtexec.exe`, and CUDA runtime files. The cu129 core, plugin, and extra overlays contain the regular TensorRT DLLs split by role, including `nvinfer_11.dll`, `nvinfer_plugin_11.dll`, and parser/dispatch DLLs such as `nvonnxparser_11.dll`. The models zip contains the bundled `models/` directory. The cu129 RTX overlay contains `vstrt_rtx.dll`, `tensorrt_rtx_1_5.dll`, and a manifest that enables both `vstrt` and `vstrt_rtx`; extract it after the base TensorRT zip for manual installs. VCS installs perform the overlay automatically into `site-packages/vapoursynth/plugins/vsmlrt` and install `vsmlrt.py` as the importable wrapper module.
+Each zip is rooted at `vsmlrt/`. The TensorRT zip contains `manifest.vs`, `vstrt.dll`, and `trtexec.exe`. The CUDA and cuDNN overlays contain secondary TensorRT dependencies such as cuBLAS, cuFFT, NVRTC, cuDNN, and CUPTI DLLs. The cu129 core, plugin, and extra overlays contain the regular TensorRT DLLs split by role, including `nvinfer_11.dll`, `nvinfer_plugin_11.dll`, and parser/dispatch DLLs such as `nvonnxparser_11.dll`. The models zip contains the bundled `models/` directory. The cu129 RTX overlay contains `vstrt_rtx.dll`, `tensorrt_rtx_1_5.dll`, and a manifest that enables both `vstrt` and `vstrt_rtx`; extract it after the base TensorRT zip for manual installs. VCS installs perform the overlay automatically into `site-packages/vapoursynth/plugins/vsmlrt` and install `vsmlrt.py` as the importable wrapper module.
 
 The payload is split because GitHub Release assets must stay below 2 GiB, while the full cu129 TensorRT + TensorRT-RTX + model bundle exceeds that limit.
 

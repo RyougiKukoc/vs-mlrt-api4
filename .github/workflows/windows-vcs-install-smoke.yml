@@ -71,6 +71,13 @@ jobs:
                       return candidate
               return None
 
+          def find_glob(pattern):
+              for root in roots:
+                  matches = list(root.glob(pattern))
+                  if matches:
+                      return matches[0]
+              return None
+
           flavor = os.environ["EXPECTED_CUDA_FLAVOR"]
           trt_suffix = "_11" if flavor == "cu129" else ""
           required = [
@@ -79,6 +86,9 @@ jobs:
               Path("vapoursynth/plugins/vsmlrt/vstrt.dll"),
               Path(f"vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvinfer{trt_suffix}.dll"),
               Path(f"vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvinfer_plugin{trt_suffix}.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cublas64_12.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cublasLt64_12.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cudart64_12.dll"),
               Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/trtexec.exe"),
               Path("vapoursynth/plugins/vsmlrt/models/dpir"),
           ]
@@ -88,6 +98,14 @@ jobs:
               required.append(Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/tensorrt_rtx_1_5.dll"))
 
           missing = [str(rel) for rel in required if find(rel) is None]
+          missing.extend(
+              pattern
+              for pattern in [
+                  "vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cudnn*.dll",
+                  "vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvrtc*.dll",
+              ]
+              if find_glob(pattern) is None
+          )
           if missing:
               raise SystemExit("Missing installed files: " + ", ".join(missing))
 
@@ -102,8 +120,16 @@ jobs:
           import vapoursynth as vs
 
           core = vs.core
-          core.std.LoadPlugin(path=str(manifest.parent / "vstrt.dll"))
+
+          def load_plugin(path):
+              try:
+                  core.std.LoadPlugin(path=str(path))
+              except vs.Error as exc:
+                  if "already loaded" not in str(exc):
+                      raise
+
+          load_plugin(manifest.parent / "vstrt.dll")
           if flavor == "cu129":
-              core.std.LoadPlugin(path=str(manifest.parent / "vstrt_rtx.dll"))
+              load_plugin(manifest.parent / "vstrt_rtx.dll")
           print(f"Loaded VapourSynth plugins for {flavor}")
           '@ | python -
