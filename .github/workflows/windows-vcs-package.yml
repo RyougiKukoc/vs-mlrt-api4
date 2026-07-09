@@ -345,9 +345,16 @@ jobs:
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          function Copy-DllsFromPackage($packageDir, $destinationDir) {
-            foreach ($runtimePath in @("$packageDir\bin\*.dll", "$packageDir\bin\x64\*.dll", "$packageDir\lib\*.dll", "$packageDir\lib\x64\*.dll")) {
-              Copy-Item $runtimePath $destinationDir -ErrorAction SilentlyContinue
+          function Copy-DllsFromPackage($packageDir, $destinationDir, [switch]$Recursive) {
+            if ($Recursive) {
+              $dlls = Get-ChildItem -LiteralPath $packageDir -Recurse -Filter "*.dll" -File -ErrorAction SilentlyContinue
+            } else {
+              $dlls = foreach ($runtimePath in @("$packageDir\bin\*.dll", "$packageDir\bin\x64\*.dll", "$packageDir\lib\*.dll", "$packageDir\lib\x64\*.dll")) {
+                Get-ChildItem -Path $runtimePath -File -ErrorAction SilentlyContinue
+              }
+            }
+            foreach ($dll in $dlls) {
+              Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $destinationDir $dll.Name) -Force
             }
           }
 
@@ -360,7 +367,7 @@ jobs:
 
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
-          Copy-DllsFromPackage "cudnn" $cudnnPayloadDir
+          Copy-DllsFromPackage "cudnn" $cudnnPayloadDir -Recursive
 
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $trtCoreCudaDir = "payload-trt-core\vsmlrt\vsmlrt-cuda"
@@ -444,6 +451,11 @@ jobs:
               throw "Missing payload item matching: $glob"
             }
           }
+          Write-Host "cuDNN payload DLLs:"
+          Get-ChildItem "payload-cudnn\vsmlrt\vsmlrt-cuda" -Filter "*.dll" |
+            Sort-Object Name |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
           foreach ($path in @("payload-base\vapoursynth", "payload-cuda\vapoursynth", "payload-cudnn\vapoursynth", "payload-models\vapoursynth", "payload-trt-core\vapoursynth", "payload-trt-plugin\vapoursynth", "payload-trt-extra\vapoursynth", "payload-rtx\vapoursynth")) {
             if (Test-Path $path) {
               throw "Release payload must be rooted at vsmlrt/, not vapoursynth/: $path"
