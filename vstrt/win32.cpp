@@ -68,7 +68,10 @@ FARPROC loadDLLs() {
 	for (const auto dll: dlls) {
 		fs::path p = dir / dll;
 		std::wstring s = p;
-		h = LoadLibraryW(s.c_str());
+		h = LoadLibraryExW(
+			s.c_str(), nullptr,
+			LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+		);
 		DWORD err = GetLastError();
 		if (getenv("VSTRT_VERBOSE"))
 			std::wcerr << L"vstrt: preloading " << p << L": " << h << std::endl;

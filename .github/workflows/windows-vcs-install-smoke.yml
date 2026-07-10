@@ -282,13 +282,27 @@ jobs:
               raise SystemExit(completed.returncode)
           stderr_lines = completed.stderr.splitlines()
           if missing_driver:
+              allowed_driver_loader_failures = {
+                  item.split(" -> ", 1)[0].lower()
+                  for item in missing_driver
+                  if item.lower().endswith("-> nvcuda.dll")
+              }
+
+              def is_allowed_driver_loader_failure(line):
+                  lower = line.lower()
+                  if "failed to preload" in lower:
+                      return any(name in lower for name in allowed_driver_loader_failures)
+                  if (
+                      flavor == "cu129"
+                      and "vstrt_rtx: tensorrt failed to load" in lower
+                      and "tensorrt_rtx_1_5.dll" in allowed_driver_loader_failures
+                  ):
+                      return True
+                  return False
+
               stderr_lines = [
                   line for line in stderr_lines
-                  if (
-                      "nvinfer_plugin" not in line
-                      and "tensorrt_rtx" not in line
-                      and "vstrt_rtx: TensorRT failed to load" not in line
-                  )
+                  if not is_allowed_driver_loader_failure(line)
               ]
           if any("failed to preload" in line or "TensorRT failed to load" in line for line in stderr_lines):
               raise SystemExit("TensorRT preload emitted loader errors.")
