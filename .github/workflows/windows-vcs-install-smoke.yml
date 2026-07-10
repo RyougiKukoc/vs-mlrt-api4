@@ -244,6 +244,7 @@ jobs:
               print("\n".join(sorted(set(missing_driver))))
 
           load_script = f"""
+          from pathlib import Path
           import vapoursynth as vs
 
           core = vs.core
@@ -258,6 +259,12 @@ jobs:
           load_plugin({str(manifest.parent / "vstrt.dll")!r})
           if {flavor == "cu129"!r}:
               load_plugin({str(manifest.parent / "vstrt_rtx.dll")!r})
+          import vsmlrt
+          expected_plugins_path = Path({str(manifest.parent)!r}).resolve()
+          actual_plugins_path = Path(vsmlrt.plugins_path).resolve()
+          if actual_plugins_path != expected_plugins_path:
+              raise RuntimeError(f"vsmlrt.plugins_path={{actual_plugins_path}} != {{expected_plugins_path}}")
+          print(f"Imported vsmlrt from {{vsmlrt.__file__}}")
           """
           completed = subprocess.run(
               [sys.executable, "-c", load_script],
