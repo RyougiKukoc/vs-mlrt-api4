@@ -36,13 +36,20 @@ import vapoursynth as vs
 from vapoursynth import core
 
 
+def _map_data_to_str(value: typing.Union[str, bytes, os.PathLike]) -> str:
+    value = os.fspath(value)
+    if isinstance(value, bytes):
+        return value.decode()
+    return value
+
+
 def get_plugins_path() -> str:
     plugin_names = ("ov", "ort", "ncnn", "trt", "trt_rtx", "migx")
 
     for plugin_name in plugin_names:
         try:
             path = getattr(core, plugin_name).Version()["path"]
-            return os.path.dirname(path).decode()
+            return os.path.dirname(_map_data_to_str(path))
         except AttributeError:
             continue
 
@@ -2025,7 +2032,7 @@ def trtexec(
         bf16 = False
 
     try:
-        device_name = core.trt.DeviceProperties(device_id)["name"].decode()
+        device_name = _map_data_to_str(core.trt.DeviceProperties(device_id)["name"])
         device_name = device_name.replace(' ', '-')
     except AttributeError:
         device_name = f"device{device_id}"
@@ -2276,10 +2283,10 @@ def get_mxr_path(
     with open(network_path, "rb") as file:
         checksum = zlib.adler32(file.read())
 
-    migx_version = core.migx.Version()["migraphx_version_build"].decode()
+    migx_version = _map_data_to_str(core.migx.Version()["migraphx_version_build"])
 
     try:
-        device_name = core.migx.DeviceProperties(device_id)["name"].decode()
+        device_name = _map_data_to_str(core.migx.DeviceProperties(device_id)["name"])
         device_name = device_name.replace(' ', '-')
     except AttributeError:
         device_name = f"device{device_id}"
@@ -2447,7 +2454,7 @@ def tensorrt_rtx(
         raise ValueError('tensorrt_rtx: "fp16" must be True.')
 
     try:
-        device_name = core.trt_rtx.DeviceProperties(device_id)["name"].decode()
+        device_name = _map_data_to_str(core.trt_rtx.DeviceProperties(device_id)["name"])
         device_name = device_name.replace(' ', '-')
     except AttributeError:
         device_name = f"device{device_id}"
