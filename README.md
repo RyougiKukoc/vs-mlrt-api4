@@ -42,6 +42,9 @@ out = vsmlrt.DPIR(clip, strength=5.0, backend=vsmlrt.Backend.TRT(fp16=True))
 `vsmlrt.py` is the stable public entry point. Do not call backend DLLs or model
 files directly from user scripts.
 
+The build hook prints progress while downloading large release assets. If your
+pip frontend suppresses build-backend output, add `-v` to the install command.
+
 On non-Windows platforms, this VCS package does not install a native prebuilt
 plugin payload. Use upstream packages or build the required backend from source.
 
@@ -76,9 +79,9 @@ CUDA-specific plugin assets are published on the CUDA tags:
   `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`.
 
 Models are published once on the separate `models` tag as
-`vs-mlrt-windows-x64-models.zip`. The VCS build hook downloads the selected CUDA
-payload plus this shared model payload, so model files are not duplicated across
-`cu121` and `cu129` releases.
+`models.zip`. The VCS build hook downloads the selected CUDA payload plus this
+shared model payload, so model files are not duplicated across `cu121` and
+`cu129` releases.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN
@@ -143,6 +146,9 @@ The build hook supports a few environment variables for maintainers:
 - `VSMLRT_MODELS_TAG=models`: override the shared model tag.
 - `VSMLRT_MODELS_RELEASE_REPO=owner/repo`: download models from another repo.
 - `VSMLRT_PREBUILT_PATHS=zip1;zip2;...`: use local payload zips instead of releases.
+- `VSMLRT_DOWNLOAD_PROGRESS=0`: hide build-hook download progress.
+- `VSMLRT_DOWNLOAD_PROGRESS_INTERVAL=5`: change progress report interval in seconds.
+- `VSMLRT_PROGRESS_CONSOLE=0`: do not try direct Windows console progress output.
 
 Use these only for packaging tests. Normal users should install from `@cu121` or
 `@cu129`.

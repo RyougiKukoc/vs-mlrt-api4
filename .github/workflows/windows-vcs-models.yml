@@ -149,8 +149,8 @@ jobs:
       - name: Package model payload
         shell: pwsh
         run: |
-          7z a -tzip -mx=9 "vs-mlrt-windows-x64-models.zip" .\payload-models\*
-          $asset = Get-Item "vs-mlrt-windows-x64-models.zip"
+          7z a -tzip -mx=9 "models.zip" .\payload-models\*
+          $asset = Get-Item "models.zip"
           if ($asset.Length -ge 2147483648) {
             throw "Release asset exceeds GitHub's 2 GiB limit: $($asset.Name) ($($asset.Length) bytes)"
           }
@@ -166,22 +166,22 @@ jobs:
               throw "Packaged model zip is missing: $path"
             }
           }
-          Get-Item "vs-mlrt-windows-x64-models.zip" |
+          Get-Item "models.zip" |
             Select-Object Name, Length |
             Format-Table -AutoSize
 
       - name: Upload model artifact
         uses: actions/upload-artifact@v7
         with:
-          name: vs-mlrt-windows-x64-models
-          path: vs-mlrt-windows-x64-models.zip
+          name: models
+          path: models.zip
 
       - name: Release model payload
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
-          files: vs-mlrt-windows-x64-models.zip
+          files: models.zip
           fail_on_unmatched_files: true
           generate_release_notes: false
           prerelease: true
