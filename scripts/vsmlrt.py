@@ -44,6 +44,10 @@ def _map_data_to_str(value: typing.Union[str, bytes, os.PathLike]) -> str:
 
 
 def get_plugins_path() -> str:
+    package_plugins_path = os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins", "vsmlrt")
+    if os.path.isfile(os.path.join(package_plugins_path, "manifest.vs")):
+        return package_plugins_path
+
     plugin_names = ("ov", "ort", "ncnn", "trt", "trt_rtx", "migx")
 
     for plugin_name in plugin_names:
