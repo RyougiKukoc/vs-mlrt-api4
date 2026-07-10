@@ -99,6 +99,35 @@ jobs:
           from pathlib import Path
           import vapoursynth as vs
 
+          class IsolatedEnvironmentPolicy:
+              def __init__(self, flags):
+                  self._flags = flags
+                  self._api = None
+                  self._environment = None
+
+              def on_policy_registered(self, api):
+                  self._api = api
+                  self._environment = api.create_environment(self._flags)
+
+              def on_policy_cleared(self):
+                  self._api = None
+                  self._environment = None
+
+              def get_current_environment(self):
+                  return self._environment
+
+              def set_environment(self, environment):
+                  previous = self._environment
+                  if environment is not None:
+                      self._environment = environment
+                  return previous
+
+              def is_alive(self, environment):
+                  return environment is self._environment
+
+          if not vs.has_policy():
+              vs.register_policy(IsolatedEnvironmentPolicy(vs.DISABLE_AUTO_LOADING))
+
           plugin_dir = Path({str(plugin_dir)!r})
           os.add_dll_directory(str(plugin_dir))
           os.add_dll_directory(str(plugin_dir / "vsov"))
@@ -107,15 +136,17 @@ jobs:
           core = vs.core
           for name in ("vsncnn", "vsov", "vsort"):
               path = plugin_dir / f"{{name}}.dll"
+              print(f"Loading {{path}}")
               try:
                   core.std.LoadPlugin(path=str(path))
               except vs.Error as exc:
                   if "already loaded" not in str(exc):
                       raise
+                  print(f"Already loaded: {{path}}")
 
-          print(core.ncnn.Version())
-          print(core.ov.Version())
-          print(core.ort.Version())
+          print("ncnn:", core.ncnn.Version())
+          print("ov:", core.ov.Version())
+          print("ort:", core.ort.Version())
           """
           completed = subprocess.run(
               [sys.executable, "-c", load_script],
