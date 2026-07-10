@@ -31,7 +31,7 @@ The payload is split because GitHub Release assets must stay below 2 GiB, while 
 
 The model directory is assembled in CI by `.github/workflows/windows-vcs-models.yml` from the upstream `model-20211209`, `model-20220923`, and `contrib-models` releases unless workflow inputs override those tags. The workflow checks that core models such as `dpir` and `rife` are present and that contributed RealESRGAN files from `contrib-models`, including `animejanaiV2L1.onnx`, `animejanaiV3-HD-L1.onnx`, and `Ani4Kv2-G6i2-Compact.onnx`, are included in the final zip.
 
-Do not point both tags at the same commit. If both tags share one commit, a pip VCS checkout may not preserve which tag the user requested. The `packaging/cuda-tag.txt` file must read `cu121` in the `cu121` tag commit and `cu129` in the `cu129` tag commit.
+Do not point the two CUDA tags, `cu121` and `cu129`, at the same commit. If they share one commit, a pip VCS checkout may not preserve which CUDA tag the user requested. The `packaging/cuda-tag.txt` file must read `cu121` in the `cu121` tag commit and `cu129` in the `cu129` tag commit. The shared `models` tag is not CUDA-sensitive and may point at any commit that contains the model workflow and build-hook support.
 
 ## Validation Notes
 
