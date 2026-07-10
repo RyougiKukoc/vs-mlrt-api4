@@ -16,8 +16,8 @@
 using namespace std::chrono_literals;
 #endif
 
-#include <VapourSynth.h>
-#include <VSHelper.h>
+#include <VapourSynth4.h>
+#include <VSHelper4.h>
 
 #include <onnx/common/version.h>
 #include <onnx/onnx_pb.h>
@@ -189,7 +189,7 @@ static int numPlanes(
     int num_planes = 0;
 
     for (const auto & vi : vis) {
-        num_planes += vi->format->numPlanes;
+        num_planes += vi->format.numPlanes;
     }
 
     return num_planes;
@@ -202,11 +202,11 @@ static std::optional<std::string> checkNodes(
 ) noexcept {
 
     for (const auto & vi : vis) {
-        if (vi->format->sampleType != stFloat) {
+        if (vi->format.sampleType != stFloat) {
             return "expects clip with floating-point type";
         }
         
-        if (vi->format->bitsPerSample != 32 && vi->format->bitsPerSample != 16) {
+        if (vi->format.bitsPerSample != 32 && vi->format.bitsPerSample != 16) {
             return "expects clip with type fp32 or fp16";
         }
 
@@ -218,7 +218,7 @@ static std::optional<std::string> checkNodes(
             return "number of frames mismatch";
         }
 
-        if (vi->format->subSamplingH != 0 || vi->format->subSamplingW != 0) {
+        if (vi->format.subSamplingH != 0 || vi->format.subSamplingW != 0) {
             return "clip must not be sub-sampled";
         }
     }
@@ -374,7 +374,7 @@ static std::optional<std::string> checkNodesAndNetwork(
     return {};
 }
 
-static void setDimensions(
+static std::optional<std::string> setDimensions(
     std::unique_ptr<VSVideoInfo> & vi,
     const std::array<int64_t, 4> & input_shape,
     const std::array<int64_t, 4> & output_shape,
@@ -388,10 +388,16 @@ static void setDimensions(
     vi->width *= output_shape[3] / input_shape[3];
 
     if (output_shape[1] == 1 || flexible_output) {
-        vi->format = vsapi->registerFormat(cmGray, stFloat, 8 * getNumBytes(onnx_output_type), 0, 0, core);
+        if (!vsapi->queryVideoFormat(&vi->format, cfGray, stFloat, 8 * getNumBytes(onnx_output_type), 0, 0, core)) {
+            return "failed to query output format";
+        }
     } else if (output_shape[1] == 3) {
-        vi->format = vsapi->registerFormat(cmRGB, stFloat, 8 * getNumBytes(onnx_output_type), 0, 0, core);
+        if (!vsapi->queryVideoFormat(&vi->format, cfRGB, stFloat, 8 * getNumBytes(onnx_output_type), 0, 0, core)) {
+            return "failed to query output format";
+        }
     }
+
+    return {};
 }
 
 struct TicketSemaphore {
@@ -457,7 +463,7 @@ struct Resource {
 };
 
 struct vsOrtData {
-    std::vector<VSNodeRef *> nodes;
+    std::vector<VSNode *> nodes;
     std::unique_ptr<VSVideoInfo> out_vi;
 
 #ifdef ENABLE_COREML
@@ -498,31 +504,17 @@ struct vsOrtData {
 };
 
 
-static void VS_CC vsOrtInit(
-    VSMap *in,
-    VSMap *out,
-    void **instanceData,
-    VSNode *node,
-    VSCore *core,
-    const VSAPI *vsapi
-) noexcept {
-
-    auto d = static_cast<vsOrtData *>(*instanceData);
-    vsapi->setVideoInfo(d->out_vi.get(), 1, node);
-}
-
-
-static const VSFrameRef *VS_CC vsOrtGetFrame(
+static const VSFrame *VS_CC vsOrtGetFrame(
     int n,
     int activationReason,
-    void **instanceData,
+    void *instanceData,
     void **frameData,
     VSFrameContext *frameCtx,
     VSCore *core,
     const VSAPI *vsapi
 ) noexcept {
 
-    auto d = static_cast<vsOrtData *>(*instanceData);
+    auto d = static_cast<vsOrtData *>(instanceData);
 
     if (activationReason == arInitial) {
         for (const auto & node : d->nodes) {
@@ -535,7 +527,7 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
             in_vis.emplace_back(vsapi->getVideoInfo(node));
         }
 
-        std::vector<const VSFrameRef *> src_frames;
+        std::vector<const VSFrame *> src_frames;
         src_frames.reserve(std::size(d->nodes));
         for (const auto & node : d->nodes) {
             src_frames.emplace_back(vsapi->getFrameFilter(n, node, frameCtx));
@@ -544,17 +536,17 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
         auto src_stride = vsapi->getStride(src_frames.front(), 0);
         auto src_width = vsapi->getFrameWidth(src_frames.front(), 0);
         auto src_height = vsapi->getFrameHeight(src_frames.front(), 0);
-        auto src_bytes = vsapi->getFrameFormat(src_frames.front())->bytesPerSample;
+        auto src_bytes = vsapi->getVideoFrameFormat(src_frames.front())->bytesPerSample;
 
-        VSFrameRef * const dst_frame = vsapi->newVideoFrame(
-            d->out_vi->format, d->out_vi->width, d->out_vi->height,
+        VSFrame * const dst_frame = vsapi->newVideoFrame(
+            &d->out_vi->format, d->out_vi->width, d->out_vi->height,
             src_frames.front(), core
         );
 
-        std::vector<VSFrameRef *> dst_frames;
+        std::vector<VSFrame *> dst_frames;
 
         auto dst_stride = vsapi->getStride(dst_frame, 0);
-        auto dst_bytes = vsapi->getFrameFormat(dst_frame)->bytesPerSample;
+        auto dst_bytes = vsapi->getVideoFrameFormat(dst_frame)->bytesPerSample;
 
         auto ticket = d->acquire();
         Resource & resource = d->resources[ticket];
@@ -568,7 +560,7 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
         std::vector<const uint8_t *> src_ptrs;
         src_ptrs.reserve(src_tile_shape[1]);
         for (unsigned i = 0; i < std::size(d->nodes); ++i) {
-            for (int j = 0; j < in_vis[i]->format->numPlanes; ++j) {
+            for (int j = 0; j < in_vis[i]->format.numPlanes; ++j) {
                 src_ptrs.emplace_back(vsapi->getReadPtr(src_frames[i], j));
             }
         }
@@ -591,7 +583,7 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
         } else {
             for (int i = 0; i < dst_planes; ++i) {
                 auto frame { vsapi->newVideoFrame(
-                    d->out_vi->format, d->out_vi->width, d->out_vi->height,
+                    &d->out_vi->format, d->out_vi->width, d->out_vi->height,
                     src_frames[0], core
                 )};
                 dst_frames.emplace_back(frame);
@@ -670,7 +662,7 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
 
 #ifdef ENABLE_CUDA
                         if (d->backend == Backend::CUDA) {
-                            vs_bitblt(
+                            vsh::bitblt(
                                 h_input_buffer, src_tile_w_bytes,
                                 src_ptr, src_stride,
                                 src_tile_w_bytes, src_tile_h
@@ -679,7 +671,7 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
                         } else
 #endif // ENABLE_CUDA
                         {
-                            vs_bitblt(
+                            vsh::bitblt(
                                 input_buffer, src_tile_w_bytes,
                                 src_ptr, src_stride,
                                 src_tile_w_bytes, src_tile_h
@@ -781,7 +773,7 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
 
 #ifdef ENABLE_CUDA
                         if (d->backend == Backend::CUDA) {
-                            vs_bitblt(
+                            vsh::bitblt(
                                 dst_ptr + (y_crop_start * dst_stride + x_crop_start * dst_bytes),
                                 dst_stride,
                                 h_output_buffer + (y_crop_start * dst_tile_w_bytes + x_crop_start * dst_bytes),
@@ -794,7 +786,7 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
                         } else
 #endif // ENABLE_CUDA
                         {
-                            vs_bitblt(
+                            vsh::bitblt(
                                 dst_ptr + (y_crop_start * dst_stride + x_crop_start * dst_bytes),
                                 dst_stride,
                                 output_buffer + (y_crop_start * dst_tile_w_bytes + x_crop_start * dst_bytes),
@@ -833,11 +825,11 @@ static const VSFrameRef *VS_CC vsOrtGetFrame(
         }
 
         if (!d->flexible_output_prop.empty()) {
-            auto prop = vsapi->getFramePropsRW(dst_frame);
+            auto prop = vsapi->getFramePropertiesRW(dst_frame);
 
             for (int i = 0; i < dst_planes; i++) {
                 auto key { d->flexible_output_prop + std::to_string(i) };
-                vsapi->propSetFrame(prop, key.c_str(), dst_frames[i], paReplace);
+                vsapi->mapSetFrame(prop, key.c_str(), dst_frames[i], maReplace);
                 vsapi->freeFrame(dst_frames[i]);
             }
         }
@@ -894,14 +886,14 @@ static void VS_CC vsOrtCreate(
 
     auto d { std::make_unique<vsOrtData>() };
 
-    int num_nodes = vsapi->propNumElements(in, "clips");
+    int num_nodes = vsapi->mapNumElements(in, "clips");
     d->nodes.reserve(num_nodes);
     for (int i = 0; i < num_nodes; ++i) {
-        d->nodes.emplace_back(vsapi->propGetNode(in, "clips", i, nullptr));
+        d->nodes.emplace_back(vsapi->mapGetNode(in, "clips", i, nullptr));
     }
 
     auto set_error = [&](const std::string & error_message) {
-        vsapi->setError(out, (__func__ + ": "s + error_message).c_str());
+        vsapi->mapSetError(out, (__func__ + ": "s + error_message).c_str());
         for (const auto & node : d->nodes) {
             vsapi->freeNode(node);
         }
@@ -922,19 +914,19 @@ static void VS_CC vsOrtCreate(
 
     int error;
 
-    d->device_id = int64ToIntS(vsapi->propGetInt(in, "device_id", 0, &error));
+    d->device_id = vsh::int64ToIntS(vsapi->mapGetInt(in, "device_id", 0, &error));
     if (error) {
         d->device_id = 0;
     }
 
     auto verbosity = static_cast<OrtLoggingLevel>(
-        vsapi->propGetInt(in, "verbosity", 0, &error)
+        vsapi->mapGetInt(in, "verbosity", 0, &error)
     );
     if (error) {
         verbosity = ORT_LOGGING_LEVEL_WARNING;
     }
 #ifdef ENABLE_COREML
-    auto ml_program = vsapi->propGetInt(in, "ml_program", 0, &error);
+    auto ml_program = vsapi->mapGetInt(in, "ml_program", 0, &error);
 
     if (error) {
         d->ml_program = false;
@@ -951,8 +943,8 @@ static void VS_CC vsOrtCreate(
     verbosity = static_cast<OrtLoggingLevel>(4 - static_cast<int>(verbosity));
 
     int error1, error2;
-    d->overlap_w = int64ToIntS(vsapi->propGetInt(in, "overlap", 0, &error1));
-    d->overlap_h = int64ToIntS(vsapi->propGetInt(in, "overlap", 1, &error2));
+    d->overlap_w = vsh::int64ToIntS(vsapi->mapGetInt(in, "overlap", 0, &error1));
+    d->overlap_h = vsh::int64ToIntS(vsapi->mapGetInt(in, "overlap", 1, &error2));
     if (!error1) {
         if (error2) {
             d->overlap_h = d->overlap_w;
@@ -966,8 +958,8 @@ static void VS_CC vsOrtCreate(
         d->overlap_h = 0;
     }
 
-    int tile_w = int64ToIntS(vsapi->propGetInt(in, "tilesize", 0, &error1));
-    int tile_h = int64ToIntS(vsapi->propGetInt(in, "tilesize", 1, &error2));
+    int tile_w = vsh::int64ToIntS(vsapi->mapGetInt(in, "tilesize", 0, &error1));
+    int tile_h = vsh::int64ToIntS(vsapi->mapGetInt(in, "tilesize", 1, &error2));
     if (!error1) { // manual specification triggered
         if (error2) {
             tile_h = tile_w;
@@ -985,7 +977,7 @@ static void VS_CC vsOrtCreate(
         return set_error("\"overlap\" too large");
     }
 
-    const char * provider = vsapi->propGetData(in, "provider", 0, &error);
+    const char * provider = vsapi->mapGetData(in, "provider", 0, &error);
     if (error) {
         provider = "";
     }
@@ -1009,7 +1001,7 @@ static void VS_CC vsOrtCreate(
         return set_error("unknwon provider "s + provider);
     }
 
-    int num_streams = int64ToIntS(vsapi->propGetInt(in, "num_streams", 0, &error));
+    int num_streams = vsh::int64ToIntS(vsapi->mapGetInt(in, "num_streams", 0, &error));
     if (error) {
         num_streams = 1;
     }
@@ -1018,19 +1010,19 @@ static void VS_CC vsOrtCreate(
     }
 
 #ifdef ENABLE_CUDA
-    bool cudnn_benchmark = !!(vsapi->propGetInt(in, "cudnn_benchmark", 0, &error));
+    bool cudnn_benchmark = !!(vsapi->mapGetInt(in, "cudnn_benchmark", 0, &error));
     if (error) {
         cudnn_benchmark = true;
     }
 
 #if ORT_API_VERSION >= 17
-    bool prefer_nhwc = !!(vsapi->propGetInt(in, "prefer_nhwc", 0, &error));
+    bool prefer_nhwc = !!(vsapi->mapGetInt(in, "prefer_nhwc", 0, &error));
     if (error) {
         prefer_nhwc = false;
     }
 #endif // ORT_API_VERSION >= 17
 
-    bool tf32 = !!(vsapi->propGetInt(in, "tf32", 0, &error));
+    bool tf32 = !!(vsapi->mapGetInt(in, "tf32", 0, &error));
     if (error) {
         tf32 = false;
     }
@@ -1040,24 +1032,24 @@ static void VS_CC vsOrtCreate(
         return set_error(err.value());
     }
 
-    bool fp16 = !!vsapi->propGetInt(in, "fp16", 0, &error);
+    bool fp16 = !!vsapi->mapGetInt(in, "fp16", 0, &error);
     if (error) {
         fp16 = false;
     }
 
-    bool path_is_serialization = !!vsapi->propGetInt(in, "path_is_serialization", 0, &error);
+    bool path_is_serialization = !!vsapi->mapGetInt(in, "path_is_serialization", 0, &error);
     if (error) {
         path_is_serialization = false;
     }
 
 #ifdef ENABLE_CUDA
-    bool use_cuda_graph = !!vsapi->propGetInt(in, "use_cuda_graph", 0, &error);
+    bool use_cuda_graph = !!vsapi->mapGetInt(in, "use_cuda_graph", 0, &error);
     if (error) {
         use_cuda_graph = false;
     }
 #endif // ENABLE_CUDA
 
-    int output_format = int64ToIntS(vsapi->propGetInt(in, "output_format", 0, &error));
+    int output_format = vsh::int64ToIntS(vsapi->mapGetInt(in, "output_format", 0, &error));
     if (error) {
         output_format = 0;
     }
@@ -1065,7 +1057,7 @@ static void VS_CC vsOrtCreate(
         return set_error("\"output_format\" must be 0 or 1");
     }
 
-    auto flexible_output_prop = vsapi->propGetData(in, "flexible_output_prop", 0, &error);
+    auto flexible_output_prop = vsapi->mapGetData(in, "flexible_output_prop", 0, &error);
     if (!error) {
         d->flexible_output_prop = flexible_output_prop;
     }
@@ -1074,14 +1066,14 @@ static void VS_CC vsOrtCreate(
     std::string path;
     if (path_is_serialization) {
         path_view = {
-            vsapi->propGetData(in, "network_path", 0, nullptr),
-            static_cast<size_t>(vsapi->propGetDataSize(in, "network_path", 0, nullptr))
+            vsapi->mapGetData(in, "network_path", 0, nullptr),
+            static_cast<size_t>(vsapi->mapGetDataSize(in, "network_path", 0, nullptr))
         };
     } else {
-        path = vsapi->propGetData(in, "network_path", 0, nullptr);
-        bool builtin = !!vsapi->propGetInt(in, "builtin", 0, &error);
+        path = vsapi->mapGetData(in, "network_path", 0, nullptr);
+        bool builtin = !!vsapi->mapGetInt(in, "builtin", 0, &error);
         if (builtin) {
-            const char *modeldir = vsapi->propGetData(in, "builtindir", 0, &error);
+            const char *modeldir = vsapi->mapGetData(in, "builtindir", 0, &error);
             if (!modeldir) modeldir = "models";
             path = std::string(modeldir) + "/" + path;
             std::string dir { vsapi->getPluginPath(myself) };
@@ -1100,7 +1092,7 @@ static void VS_CC vsOrtCreate(
 
     if (fp16) {
         std::unordered_set<std::string> fp16_blacklist_ops;
-        int num = vsapi->propNumElements(in, "fp16_blacklist_ops");
+        int num = vsapi->mapNumElements(in, "fp16_blacklist_ops");
         if (num == -1) {
             fp16_blacklist_ops = {
                 "ArrayFeatureExtractor", "Binarizer", "CastMap", "CategoryMapper",
@@ -1114,14 +1106,14 @@ static void VS_CC vsOrtCreate(
             };
         } else {
             for (int i = 0; i < num; i++) {
-                fp16_blacklist_ops.emplace(vsapi->propGetData(in, "fp16_blacklist_ops", i, nullptr));
+                fp16_blacklist_ops.emplace(vsapi->mapGetData(in, "fp16_blacklist_ops", i, nullptr));
             }
         }
         convert_float_to_float16(
             onnx_model,
             false,
             fp16_blacklist_ops,
-            in_vis.front()->format->bytesPerSample == 4,
+            in_vis.front()->format.bytesPerSample == 4,
             output_format == 0
         );
     }
@@ -1131,9 +1123,9 @@ static void VS_CC vsOrtCreate(
     auto onnx_input_type = onnx_model.graph().input()[0].type().tensor_type().elem_type();
     auto onnx_output_type = onnx_model.graph().output()[0].type().tensor_type().elem_type();
 
-    if (onnx_input_type == ONNX_NAMESPACE::TensorProto::FLOAT && in_vis.front()->format->bitsPerSample != 32) {
+    if (onnx_input_type == ONNX_NAMESPACE::TensorProto::FLOAT && in_vis.front()->format.bitsPerSample != 32) {
         return set_error("the onnx requires input to be of type fp32");
-    } else if (onnx_input_type == ONNX_NAMESPACE::TensorProto::FLOAT16 && in_vis.front()->format->bitsPerSample != 16) {
+    } else if (onnx_input_type == ONNX_NAMESPACE::TensorProto::FLOAT16 && in_vis.front()->format.bitsPerSample != 16) {
         return set_error("the onnx requires input to be of type fp16");
     }
 
@@ -1389,18 +1381,20 @@ static void VS_CC vsOrtCreate(
         }
 
         if (i == 0) {
-            setDimensions(
+            if (auto err = setDimensions(
                 d->out_vi,
                 input_shape,
                 output_shape,
                 core, vsapi,
                 onnx_output_type,
                 !d->flexible_output_prop.empty()
-            );
+            ); err.has_value()) {
+                return set_error(err.value());
+            }
 
             if (!d->flexible_output_prop.empty()) {
                 auto num_planes = output_shape[1];
-                vsapi->propSetInt(out, "num_planes", static_cast<int>(num_planes), paReplace);
+                vsapi->mapSetInt(out, "num_planes", static_cast<int>(num_planes), maReplace);
             }
         }
 
@@ -1409,29 +1403,36 @@ static void VS_CC vsOrtCreate(
 
     ortapi->ReleaseMemoryInfo(memory_info);
 
-    vsapi->createFilter(
-        in, out, "Model",
-        vsOrtInit, vsOrtGetFrame, vsOrtFree,
-        fmParallel, 0, d.release(), core
+    std::vector<VSFilterDependency> deps;
+    deps.reserve(d->nodes.size());
+    for (const auto & node : d->nodes) {
+        deps.push_back({ node, rpStrictSpatial });
+    }
+
+    auto data = d.get();
+    vsapi->createVideoFilter(
+        out, "Model", data->out_vi.get(),
+        vsOrtGetFrame, vsOrtFree,
+        fmParallel, deps.data(), static_cast<int>(deps.size()), data, core
     );
+    d.release();
 }
 
 
-VS_EXTERNAL_API(void) VapourSynthPluginInit(
-    VSConfigPlugin configFunc,
-    VSRegisterFunction registerFunc,
-    VSPlugin *plugin
+VS_EXTERNAL_API(void) VapourSynthPluginInit2(
+    VSPlugin *plugin,
+    const VSPLUGINAPI *vspapi
 ) noexcept {
     myself = plugin;
 
-    configFunc(
+    vspapi->configPlugin(
         "io.github.amusementclub.vs_onnxruntime", "ort",
         "ONNX Runtime ML Filter Runtime",
-        VAPOURSYNTH_API_VERSION, 1, plugin
+        VS_MAKE_VERSION(3, 0), VAPOURSYNTH_API_VERSION, 0, plugin
     );
 
-    registerFunc("Model",
-        "clips:clip[];"
+    vspapi->registerFunction("Model",
+        "clips:vnode[];"
         "network_path:data;"
         "overlap:int[]:opt;"
         "tilesize:int[]:opt;"
@@ -1453,58 +1454,71 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit(
 #ifdef ENABLE_COREML
         "ml_program:int:opt;"
 #endif //ENABLE_COREML
-        , vsOrtCreate,
+        ,
+        "clip:vnode;num_planes:int:opt;",
+        vsOrtCreate,
         nullptr,
         plugin
     );
 
-    auto getVersion = [](const VSMap *, VSMap * out, void *, VSCore *, const VSAPI *vsapi) {
-        vsapi->propSetData(out, "version", VERSION, -1, paReplace);
+    auto getVersion = [](const VSMap *, VSMap * out, void *, VSCore *core, const VSAPI *vsapi) {
+        vsapi->mapSetData(out, "version", VERSION, -1, dtUtf8, maReplace);
 
-        vsapi->propSetData(
+        vsapi->mapSetData(
             out, "onnxruntime_api_version_build",
-            std::to_string(ORT_API_VERSION).c_str(), -1, paReplace
+            std::to_string(ORT_API_VERSION).c_str(), -1, dtUtf8, maReplace
         );
 
         if (auto err = ortInit(); err.has_value()) {
-            vsapi->logMessage(mtWarning, err.value().c_str());
+            vsapi->logMessage(mtWarning, err.value().c_str(), core);
         } else {
             if (auto p = OrtGetApiBase(); p) {
-                vsapi->propSetData(
+                vsapi->mapSetData(
                     out, "onnxruntime_version",
-                    p->GetVersionString(), -1, paReplace
+                    p->GetVersionString(), -1, dtUtf8, maReplace
                 );
             }
 
-            vsapi->propSetData(
+            vsapi->mapSetData(
                 out, "onnxruntime_build_info",
-                ortapi->GetBuildInfoString(), -1, paReplace
+                ortapi->GetBuildInfoString(), -1, dtUtf8, maReplace
             );
         }
 
 #ifdef ENABLE_CUDA
-        vsapi->propSetData(
+        vsapi->mapSetData(
             out, "cuda_runtime_version",
-            std::to_string(__CUDART_API_VERSION).c_str(), -1, paReplace
+            std::to_string(__CUDART_API_VERSION).c_str(), -1, dtUtf8, maReplace
         );
 #endif // ENABLE_CUDA
 
-        vsapi->propSetData(
+        vsapi->mapSetData(
             out, "onnx_version",
-            ONNX_NAMESPACE::LAST_RELEASE_VERSION, -1, paReplace
+            ONNX_NAMESPACE::LAST_RELEASE_VERSION, -1, dtUtf8, maReplace
         );
 
-        vsapi->propSetData(out, "path", vsapi->getPluginPath(myself), -1, paReplace);
+        vsapi->mapSetData(out, "path", vsapi->getPluginPath(myself), -1, dtUtf8, maReplace);
 
 #ifdef ENABLE_CUDA
-        vsapi->propSetData(out, "providers", "CUDA", -1, paAppend);
+        vsapi->mapSetData(out, "providers", "CUDA", -1, dtUtf8, maAppend);
 #endif
 #ifdef ENABLE_COREML
-        vsapi->propSetData(out, "providers", "COREML", -1, paAppend);
+        vsapi->mapSetData(out, "providers", "COREML", -1, dtUtf8, maAppend);
 #endif
 #ifdef ENABLE_DML
-        vsapi->propSetData(out, "providers", "DML", -1, paAppend);
+        vsapi->mapSetData(out, "providers", "DML", -1, dtUtf8, maAppend);
 #endif
     };
-    registerFunc("Version", "", getVersion, nullptr, plugin);
+    vspapi->registerFunction(
+        "Version", "",
+        "version:data;"
+        "onnxruntime_api_version_build:data;"
+        "onnxruntime_version:data:opt;"
+        "onnxruntime_build_info:data:opt;"
+        "cuda_runtime_version:data:opt;"
+        "onnx_version:data;"
+        "path:data;"
+        "providers:data[]:opt;",
+        getVersion, nullptr, plugin
+    );
 }

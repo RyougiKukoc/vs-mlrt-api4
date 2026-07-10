@@ -14,7 +14,10 @@ from pathlib import Path
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 
+PAYLOAD_TAGS = {"generic", "cu121", "cu129"}
 CUDA_TAGS = {"cu121", "cu129"}
+GENERIC_TAG = "generic"
+DEFAULT_PAYLOAD_TAG_FILE = Path("packaging") / "payload-tag.txt"
 DEFAULT_CUDA_TAG_FILE = Path("packaging") / "cuda-tag.txt"
 DEFAULT_MODELS_TAG = "models"
 MODELS_ASSET = "models.zip"
@@ -79,10 +82,19 @@ class CustomBuildHook(BuildHookInterface):
         return self._download_release_payloads()
 
     def _download_release_payloads(self) -> list[Path]:
-        cuda_tag = self._detect_cuda_tag()
+        payload_tag = self._detect_payload_tag()
         repo = os.environ.get("VSMLRT_RELEASE_REPO") or self._detect_github_repo()
         models_repo = os.environ.get("VSMLRT_MODELS_RELEASE_REPO") or repo
         models_tag = os.environ.get("VSMLRT_MODELS_TAG") or DEFAULT_MODELS_TAG
+
+        if payload_tag == GENERIC_TAG:
+            urls = [
+                f"https://github.com/{repo}/releases/download/{GENERIC_TAG}/vs-mlrt-windows-x64-generic.zip",
+                f"https://github.com/{models_repo}/releases/download/{models_tag}/{MODELS_ASSET}",
+            ]
+            return self._download_urls(urls)
+
+        cuda_tag = payload_tag
         cuda_assets = [
             f"vs-mlrt-windows-x64-tensorrt-{cuda_tag}.zip",
             f"vs-mlrt-windows-x64-cuda-{cuda_tag}.zip",
@@ -211,15 +223,23 @@ class CustomBuildHook(BuildHookInterface):
                 return f"{size:.1f} {unit}"
             size /= 1024
 
-    def _detect_cuda_tag(self) -> str:
-        explicit = os.environ.get("VSMLRT_CUDA_TAG")
+    def _detect_payload_tag(self) -> str:
+        explicit = os.environ.get("VSMLRT_PAYLOAD_TAG")
         if explicit:
-            if explicit not in CUDA_TAGS:
-                raise RuntimeError(f"Unsupported VSMLRT_CUDA_TAG={explicit!r}; expected cu121 or cu129.")
+            if explicit not in PAYLOAD_TAGS:
+                raise RuntimeError(
+                    f"Unsupported VSMLRT_PAYLOAD_TAG={explicit!r}; expected generic, cu121, or cu129."
+                )
             return explicit
 
+        legacy_cuda = os.environ.get("VSMLRT_CUDA_TAG")
+        if legacy_cuda:
+            if legacy_cuda not in CUDA_TAGS:
+                raise RuntimeError(f"Unsupported VSMLRT_CUDA_TAG={legacy_cuda!r}; expected cu121 or cu129.")
+            return legacy_cuda
+
         ref_name = os.environ.get("GITHUB_REF_NAME")
-        if ref_name in CUDA_TAGS:
+        if ref_name in PAYLOAD_TAGS:
             return ref_name
 
         try:
@@ -232,14 +252,30 @@ class CustomBuildHook(BuildHookInterface):
         except Exception:
             tag = ""
 
-        if tag in CUDA_TAGS:
+        if tag in PAYLOAD_TAGS:
             return tag
+
+        configured = self._read_default_payload_tag()
+        if configured:
+            return configured
 
         configured = self._read_default_cuda_tag()
         if configured:
             return configured
 
         return "cu129"
+
+    def _read_default_payload_tag(self) -> str:
+        tag_file = Path(self.root) / DEFAULT_PAYLOAD_TAG_FILE
+        if not tag_file.is_file():
+            return ""
+
+        tag = tag_file.read_text(encoding="utf-8").strip()
+        if tag not in PAYLOAD_TAGS:
+            raise RuntimeError(
+                f"Unsupported default payload tag in {DEFAULT_PAYLOAD_TAG_FILE}: {tag!r}."
+            )
+        return tag
 
     def _read_default_cuda_tag(self) -> str:
         tag_file = Path(self.root) / DEFAULT_CUDA_TAG_FILE

@@ -1,0 +1,139 @@
+name: Smoke generic VCS install
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: windows-2022
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Vulkan SDK
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe?Human=true" -OutFile VulkanSDK.exe
+          $installer = Start-Process -FilePath VulkanSDK.exe -Wait -PassThru -ArgumentList "--accept-licenses --default-answer --confirm-command install"
+          $installer.WaitForExit()
+          "C:\VulkanSDK\1.4.321.1\Bin" | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
+
+      - name: Install package from generic tag
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir "vs-mlrt @ git+https://github.com/${{ github.repository }}.git@generic"
+
+      - name: Verify generic install
+        shell: pwsh
+        run: |
+          @'
+          import os
+          import site
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          import vapoursynth as vs
+          import vsmlrt
+
+          roots = [Path(p) for p in site.getsitepackages()]
+          user_site = site.getusersitepackages()
+          if user_site:
+              roots.append(Path(user_site))
+
+          def find(rel: Path):
+              for root in roots:
+                  candidate = root / rel
+                  if candidate.exists():
+                      return candidate
+              return None
+
+          required = [
+              Path("vsmlrt.py"),
+              Path("vapoursynth/plugins/vsmlrt/manifest.vs"),
+              Path("vapoursynth/plugins/vsmlrt/vsncnn.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsov.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsort.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsov/openvino.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsov/tbb12.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsort/onnxruntime.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsort/DirectML.dll"),
+              Path("vapoursynth/plugins/vsmlrt/models/dpir"),
+              Path("vapoursynth/plugins/vsmlrt/models/rife"),
+              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/animejanaiV2L1.onnx"),
+              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/animejanaiV3-HD-L1.onnx"),
+              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/Ani4Kv2-G6i2-Compact.onnx"),
+          ]
+
+          missing = [str(rel) for rel in required if find(rel) is None]
+          if missing:
+              raise SystemExit("Missing installed files: " + ", ".join(missing))
+
+          forbidden = [
+              Path("vapoursynth/plugins/vsmlrt/vstrt.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"),
+              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda"),
+          ]
+          present_forbidden = [str(rel) for rel in forbidden if find(rel) is not None]
+          if present_forbidden:
+              raise SystemExit("Generic install unexpectedly contains: " + ", ".join(present_forbidden))
+
+          manifest = find(Path("vapoursynth/plugins/vsmlrt/manifest.vs"))
+          plugin_dir = manifest.parent
+          expected_plugins_path = plugin_dir.resolve()
+          actual_plugins_path = Path(vsmlrt.plugins_path).resolve()
+          if actual_plugins_path != expected_plugins_path:
+              raise RuntimeError(f"vsmlrt.plugins_path={actual_plugins_path} != {expected_plugins_path}")
+
+          print(manifest.read_text(encoding="ascii"))
+          os.add_dll_directory(str(plugin_dir))
+          os.add_dll_directory(str(plugin_dir / "vsov"))
+          os.add_dll_directory(str(plugin_dir / "vsort"))
+
+          load_script = f"""
+          import os
+          from pathlib import Path
+          import vapoursynth as vs
+
+          plugin_dir = Path({str(plugin_dir)!r})
+          os.add_dll_directory(str(plugin_dir))
+          os.add_dll_directory(str(plugin_dir / "vsov"))
+          os.add_dll_directory(str(plugin_dir / "vsort"))
+
+          core = vs.core
+          for name in ("vsncnn", "vsov", "vsort"):
+              path = plugin_dir / f"{{name}}.dll"
+              try:
+                  core.std.LoadPlugin(path=str(path))
+              except vs.Error as exc:
+                  if "already loaded" not in str(exc):
+                      raise
+
+          print(core.ncnn.Version())
+          print(core.ov.Version())
+          print(core.ort.Version())
+          """
+          completed = subprocess.run(
+              [sys.executable, "-c", load_script],
+              text=True,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              check=False,
+          )
+          if completed.stdout:
+              print(completed.stdout, end="")
+          if completed.stderr:
+              print(completed.stderr, file=sys.stderr, end="")
+          if completed.returncode:
+              raise SystemExit(completed.returncode)
+
+          stderr_lines = completed.stderr.splitlines()
+          if any("failed to preload" in line for line in stderr_lines):
+              raise SystemExit("Generic preload emitted loader errors.")
+
+          print(f"Verified generic install under: {plugin_dir}")
+          '@ | python -
