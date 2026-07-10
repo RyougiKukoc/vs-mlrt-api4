@@ -1,0 +1,187 @@
+name: Build Windows VCS model package
+
+on:
+  push:
+    tags:
+      - models
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: Release tag for the shared model payload
+        type: string
+        required: false
+        default: models
+      publish:
+        description: Upload payload to the model GitHub Release
+        type: boolean
+        required: false
+        default: false
+      model-tags:
+        description: Comma-separated upstream model release tags
+        type: string
+        required: false
+        default: model-20211209,model-20220923
+      contrib-model-tags:
+        description: Comma-separated upstream contributed model release tags
+        type: string
+        required: false
+        default: contrib-models
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_RELEASE_TAG: ${{ inputs['release-tag'] || 'models' }}
+        run: |
+          $releaseTag = $env:INPUT_RELEASE_TAG
+          if ($env:EVENT_NAME -eq "push") {
+            $releaseTag = $env:REF_NAME
+          }
+          if (-not $releaseTag) {
+            throw "Model release tag is empty"
+          }
+          "tag=$releaseTag" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+
+      - name: Download bundled models
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODEL_TAGS: ${{ inputs['model-tags'] || 'model-20211209,model-20220923' }}
+          CONTRIB_MODEL_TAGS: ${{ inputs['contrib-model-tags'] || 'contrib-models' }}
+        run: |
+          $sourceDir = "payload-source\vsmlrt"
+          $modelsDir = "payload-models\vsmlrt\models"
+          New-Item -ItemType Directory -Force -Path model-assets, $sourceDir, $modelsDir | Out-Null
+
+          $headers = @{
+            "Accept" = "application/vnd.github+json"
+            "User-Agent" = "vs-mlrt-vcs-models"
+          }
+          $assetHeaders = @{
+            "Accept" = "application/octet-stream"
+            "User-Agent" = "vs-mlrt-vcs-models"
+          }
+          if ($env:GITHUB_TOKEN) {
+            $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+            $assetHeaders["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+          }
+
+          $tags = @($env:MODEL_TAGS, $env:CONTRIB_MODEL_TAGS) |
+            ForEach-Object { $_ -split "," } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+
+          foreach ($tag in $tags) {
+            Write-Host "Downloading upstream model release: $tag"
+            $release = Invoke-RestMethod `
+              -Headers $headers `
+              -Uri "https://api.github.com/repos/AmusementClub/vs-mlrt/releases/tags/$tag"
+
+            if (-not $release.assets -or $release.assets.Count -eq 0) {
+              throw "Upstream model release has no assets: $tag"
+            }
+
+            foreach ($asset in $release.assets) {
+              $assetPath = Join-Path "model-assets" "$tag-$($asset.name)"
+              Write-Host "Downloading $($asset.name)"
+              Invoke-WebRequest `
+                -Headers $assetHeaders `
+                -Uri $asset.url `
+                -OutFile $assetPath
+              7z x -y $assetPath "-o$sourceDir"
+            }
+          }
+
+          if (Test-Path "$sourceDir\models") {
+            Copy-Item -Path "$sourceDir\models\*" -Destination $modelsDir -Recurse -Force
+            Remove-Item -LiteralPath "$sourceDir\models" -Recurse -Force
+          }
+
+          Get-ChildItem -Path $sourceDir -Directory |
+            Where-Object { $_.Name -ne "models" -and $_.Name -ne "vsmlrt-cuda" } |
+            ForEach-Object {
+              $target = Join-Path $modelsDir $_.Name
+              if (Test-Path -LiteralPath $target) {
+                Copy-Item -Path "$($_.FullName)\*" -Destination $target -Recurse -Force
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force
+              } else {
+                Move-Item -LiteralPath $_.FullName -Destination $modelsDir
+              }
+            }
+
+      - name: Inspect model layout
+        shell: pwsh
+        run: |
+          $required = @(
+            "payload-models\vsmlrt\models\dpir",
+            "payload-models\vsmlrt\models\rife",
+            "payload-models\vsmlrt\models\RealESRGANv2\animejanaiV2L1.onnx",
+            "payload-models\vsmlrt\models\RealESRGANv2\animejanaiV3-HD-L1.onnx",
+            "payload-models\vsmlrt\models\RealESRGANv2\Ani4Kv2-G6i2-Compact.onnx"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              Write-Host "Top-level model directories:"
+              Get-ChildItem -LiteralPath "payload-models\vsmlrt\models" -Directory |
+                Sort-Object Name |
+                Select-Object -ExpandProperty Name
+              throw "Missing model payload item: $path"
+            }
+          }
+          if (Test-Path "payload-models\vapoursynth") {
+            throw "Model payload must be rooted at vsmlrt/, not vapoursynth/"
+          }
+          Get-ChildItem -LiteralPath "payload-models\vsmlrt\models" -Directory |
+            Sort-Object Name |
+            Select-Object Name |
+            Format-Table -AutoSize
+
+      - name: Package model payload
+        shell: pwsh
+        run: |
+          7z a -tzip -mx=9 "vs-mlrt-windows-x64-models.zip" .\payload-models\*
+          $asset = Get-Item "vs-mlrt-windows-x64-models.zip"
+          if ($asset.Length -ge 2147483648) {
+            throw "Release asset exceeds GitHub's 2 GiB limit: $($asset.Name) ($($asset.Length) bytes)"
+          }
+          $listing = 7z l $asset.FullName | Out-String
+          foreach ($path in @(
+            "vsmlrt\models\dpir",
+            "vsmlrt\models\rife",
+            "vsmlrt\models\RealESRGANv2\animejanaiV2L1.onnx",
+            "vsmlrt\models\RealESRGANv2\animejanaiV3-HD-L1.onnx",
+            "vsmlrt\models\RealESRGANv2\Ani4Kv2-G6i2-Compact.onnx"
+          )) {
+            if (-not $listing.Contains($path)) {
+              throw "Packaged model zip is missing: $path"
+            }
+          }
+          Get-Item "vs-mlrt-windows-x64-models.zip" |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
+
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vs-mlrt-windows-x64-models
+          path: vs-mlrt-windows-x64-models.zip
+
+      - name: Release model payload
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          files: vs-mlrt-windows-x64-models.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+          prerelease: true

@@ -97,6 +97,10 @@ jobs:
               Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cudart64_12.dll"),
               Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/trtexec.exe"),
               Path("vapoursynth/plugins/vsmlrt/models/dpir"),
+              Path("vapoursynth/plugins/vsmlrt/models/rife"),
+              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/animejanaiV2L1.onnx"),
+              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/animejanaiV3-HD-L1.onnx"),
+              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/Ani4Kv2-G6i2-Compact.onnx"),
           ]
           if flavor == "cu129":
               required.append(Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"))

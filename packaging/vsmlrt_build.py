@@ -14,6 +14,7 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 CUDA_TAGS = {"cu121", "cu129"}
 DEFAULT_CUDA_TAG_FILE = Path("packaging") / "cuda-tag.txt"
+DEFAULT_MODELS_TAG = "models"
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -75,14 +76,15 @@ class CustomBuildHook(BuildHookInterface):
     def _download_release_payloads(self) -> list[Path]:
         cuda_tag = self._detect_cuda_tag()
         repo = os.environ.get("VSMLRT_RELEASE_REPO") or self._detect_github_repo()
-        assets = [
+        models_repo = os.environ.get("VSMLRT_MODELS_RELEASE_REPO") or repo
+        models_tag = os.environ.get("VSMLRT_MODELS_TAG") or DEFAULT_MODELS_TAG
+        cuda_assets = [
             f"vs-mlrt-windows-x64-tensorrt-{cuda_tag}.zip",
             f"vs-mlrt-windows-x64-cuda-{cuda_tag}.zip",
             f"vs-mlrt-windows-x64-cudnn-{cuda_tag}.zip",
-            "vs-mlrt-windows-x64-models.zip",
         ]
         if cuda_tag == "cu129":
-            assets.extend(
+            cuda_assets.extend(
                 [
                     "vs-mlrt-windows-x64-tensorrt-core-cu129.zip",
                     "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip",
@@ -91,7 +93,11 @@ class CustomBuildHook(BuildHookInterface):
                 ]
             )
 
-        urls = [f"https://github.com/{repo}/releases/download/{cuda_tag}/{asset}" for asset in assets]
+        urls = [f"https://github.com/{repo}/releases/download/{cuda_tag}/{asset}" for asset in cuda_assets]
+        urls.append(
+            f"https://github.com/{models_repo}/releases/download/{models_tag}/"
+            "vs-mlrt-windows-x64-models.zip"
+        )
         return self._download_urls(urls)
 
     def _download_urls(self, urls: list[str]) -> list[Path]:

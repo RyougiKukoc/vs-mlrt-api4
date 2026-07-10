@@ -18,16 +18,18 @@ pip install "vs-mlrt @ git+https://github.com/<owner>/vs-mlrt.git@cu129"
 pip install "vs-mlrt @ git+https://github.com/<owner>/vs-mlrt.git@cu121"
 ```
 
-The build hook downloads and overlays the matching release assets:
+The build hook downloads and overlays the matching CUDA release assets:
 
-- `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, and `vs-mlrt-windows-x64-models.zip`
-- `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`, `vs-mlrt-windows-x64-cuda-cu129.zip`, `vs-mlrt-windows-x64-cudnn-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, `vs-mlrt-windows-x64-models.zip`, and `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`
+- `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, and `vs-mlrt-windows-x64-cudnn-cu121.zip`
+- `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`, `vs-mlrt-windows-x64-cuda-cu129.zip`, `vs-mlrt-windows-x64-cudnn-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, and `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`
+
+The shared model payload is published once on the separate `models` release tag as `vs-mlrt-windows-x64-models.zip`. VCS installs always download this shared model asset in addition to the selected CUDA tag. Set `VSMLRT_MODELS_TAG` or `VSMLRT_MODELS_RELEASE_REPO` only when testing a temporary model release.
 
 Each zip is rooted at `vsmlrt/`. The TensorRT zip contains `manifest.vs`, `vstrt.dll`, and `trtexec.exe`. The CUDA and cuDNN overlays contain secondary TensorRT dependencies such as cuBLAS, cuFFT, NVRTC, cuDNN, and CUPTI DLLs. The cu129 core, plugin, and extra overlays contain the regular TensorRT DLLs split by role, including `nvinfer_11.dll`, `nvinfer_plugin_11.dll`, and parser/dispatch DLLs such as `nvonnxparser_11.dll`. The models zip contains the bundled `models/` directory. The cu129 RTX overlay contains `vstrt_rtx.dll`, `tensorrt_rtx_1_5.dll`, and a manifest that enables both `vstrt` and `vstrt_rtx`; extract it after the base TensorRT zip for manual installs. VCS installs perform the overlay automatically into `site-packages/vapoursynth/plugins/vsmlrt` and install `vsmlrt.py` as the importable wrapper module.
 
 The payload is split because GitHub Release assets must stay below 2 GiB, while the full cu129 TensorRT + TensorRT-RTX + model bundle exceeds that limit.
 
-The model directory is assembled in CI from the upstream `model-20211209`, `model-20220923`, and `contrib-models` releases unless workflow inputs override those tags.
+The model directory is assembled in CI by `.github/workflows/windows-vcs-models.yml` from the upstream `model-20211209`, `model-20220923`, and `contrib-models` releases unless workflow inputs override those tags. The workflow checks that core models such as `dpir` and `rife` are present and that contributed RealESRGAN files from `contrib-models`, including `animejanaiV2L1.onnx`, `animejanaiV3-HD-L1.onnx`, and `Ani4Kv2-G6i2-Compact.onnx`, are included in the final zip.
 
 Do not point both tags at the same commit. If both tags share one commit, a pip VCS checkout may not preserve which tag the user requested. The `packaging/cuda-tag.txt` file must read `cu121` in the `cu121` tag commit and `cu129` in the `cu129` tag commit.
 

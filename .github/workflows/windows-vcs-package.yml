@@ -21,16 +21,6 @@ on:
         type: boolean
         required: false
         default: false
-      model-tags:
-        description: Comma-separated upstream model release tags
-        type: string
-        required: false
-        default: model-20211209,model-20220923
-      contrib-model-tags:
-        description: Comma-separated upstream contributed model release tags
-        type: string
-        required: false
-        default: contrib-models
 
 permissions:
   contents: write
@@ -206,65 +196,6 @@ jobs:
           Expand-Archive -LiteralPath vs.zip -DestinationPath vstrt -Force
           Move-Item -Path (Get-ChildItem -Path vstrt -Directory -Filter "vapoursynth-*" | Select-Object -First 1).FullName -Destination vstrt\vapoursynth
 
-      - name: Download bundled models
-        if: steps.select.outputs.should_build == 'true'
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          MODEL_TAGS: ${{ inputs['model-tags'] || 'model-20211209,model-20220923' }}
-          CONTRIB_MODEL_TAGS: ${{ inputs['contrib-model-tags'] || 'contrib-models' }}
-        run: |
-          New-Item -ItemType Directory -Force -Path model-assets, payload\vsmlrt | Out-Null
-          $headers = @{
-            "Accept" = "application/vnd.github+json"
-            "User-Agent" = "vs-mlrt-vcs-package"
-          }
-          if ($env:GITHUB_TOKEN) {
-            $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
-          }
-
-          $assetHeaders = @{
-            "Accept" = "application/octet-stream"
-            "User-Agent" = "vs-mlrt-vcs-package"
-          }
-          if ($env:GITHUB_TOKEN) {
-            $assetHeaders["Authorization"] = "Bearer $env:GITHUB_TOKEN"
-          }
-
-          $tags = @($env:MODEL_TAGS, $env:CONTRIB_MODEL_TAGS) |
-            ForEach-Object { $_ -split "," } |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ }
-
-          foreach ($tag in $tags) {
-            $release = Invoke-RestMethod `
-              -Headers $headers `
-              -Uri "https://api.github.com/repos/AmusementClub/vs-mlrt/releases/tags/$tag"
-
-            foreach ($asset in $release.assets) {
-              $assetPath = "model-assets\$($asset.name)"
-              Invoke-WebRequest `
-                -Headers $assetHeaders `
-                -Uri $asset.url `
-                -OutFile $assetPath
-              7z x -y $assetPath "-opayload\vsmlrt"
-            }
-          }
-
-          $modelsDir = "payload\vsmlrt\models"
-          New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
-          Get-ChildItem -Path "payload\vsmlrt" -Directory |
-            Where-Object { $_.Name -ne "models" -and $_.Name -ne "vsmlrt-cuda" } |
-            ForEach-Object {
-              $target = Join-Path $modelsDir $_.Name
-              if (Test-Path -LiteralPath $target) {
-                Copy-Item -Path "$($_.FullName)\*" -Destination $target -Recurse -Force
-                Remove-Item -LiteralPath $_.FullName -Recurse -Force
-              } else {
-                Move-Item -LiteralPath $_.FullName -Destination $modelsDir
-              }
-            }
-
       - name: Configure vstrt
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
@@ -362,8 +293,7 @@ jobs:
           $baseCudaDir = "$basePluginDir\vsmlrt-cuda"
           $cudaPayloadDir = "payload-cuda\vsmlrt\vsmlrt-cuda"
           $cudnnPayloadDir = "payload-cudnn\vsmlrt\vsmlrt-cuda"
-          $modelsPluginDir = "payload-models\vsmlrt"
-          New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir, $modelsPluginDir | Out-Null
+          New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir | Out-Null
 
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
@@ -383,12 +313,6 @@ jobs:
                 Move-Item -LiteralPath $dll.FullName -Destination $trtExtraCudaDir
               }
             }
-          }
-
-          if (Test-Path "payload\vsmlrt\models") {
-            Copy-Item -LiteralPath "payload\vsmlrt\models" -Destination $modelsPluginDir -Recurse -Force
-          } else {
-            throw "Bundled models were not assembled at payload\vsmlrt\models"
           }
 
           $cudaPath = $env:CUDA_PATH
@@ -427,8 +351,7 @@ jobs:
             "payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe",
             "payload-cuda\vsmlrt\vsmlrt-cuda\cublas64_12.dll",
             "payload-cuda\vsmlrt\vsmlrt-cuda\cublasLt64_12.dll",
-            "payload-cuda\vsmlrt\vsmlrt-cuda\cudart64_12.dll",
-            "payload-models\vsmlrt\models\dpir"
+            "payload-cuda\vsmlrt\vsmlrt-cuda\cudart64_12.dll"
           )
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $required += "payload-trt-core\vsmlrt\vsmlrt-cuda\nvinfer_11.dll"
@@ -456,7 +379,7 @@ jobs:
             Sort-Object Name |
             Select-Object Name, Length |
             Format-Table -AutoSize
-          foreach ($path in @("payload-base\vapoursynth", "payload-cuda\vapoursynth", "payload-cudnn\vapoursynth", "payload-models\vapoursynth", "payload-trt-core\vapoursynth", "payload-trt-plugin\vapoursynth", "payload-trt-extra\vapoursynth", "payload-rtx\vapoursynth")) {
+          foreach ($path in @("payload-base\vapoursynth", "payload-cuda\vapoursynth", "payload-cudnn\vapoursynth", "payload-trt-core\vapoursynth", "payload-trt-plugin\vapoursynth", "payload-trt-extra\vapoursynth", "payload-rtx\vapoursynth")) {
             if (Test-Path $path) {
               throw "Release payload must be rooted at vsmlrt/, not vapoursynth/: $path"
             }
@@ -469,7 +392,6 @@ jobs:
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload-base\*
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-cuda-${{ matrix.cuda_flavor }}.zip" .\payload-cuda\*
           7z a -tzip -mx=9 "vs-mlrt-windows-x64-cudnn-${{ matrix.cuda_flavor }}.zip" .\payload-cudnn\*
-          7z a -tzip -mx=9 "vs-mlrt-windows-x64-models.zip" .\payload-models\*
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-core-cu129.zip" .\payload-trt-core\*
             7z a -tzip -mx=9 "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip" .\payload-trt-plugin\*
