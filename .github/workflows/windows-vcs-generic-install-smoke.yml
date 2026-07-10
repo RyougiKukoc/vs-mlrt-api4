@@ -125,28 +125,39 @@ jobs:
               def is_alive(self, environment):
                   return environment is self._environment
 
+              def close(self):
+                  if self._api is not None and self._environment is not None:
+                      self._api.destroy_environment(self._environment)
+                      self._environment = None
+
+          policy = None
           if not vs.has_policy():
-              vs.register_policy(IsolatedEnvironmentPolicy(vs.DISABLE_AUTO_LOADING))
+              policy = IsolatedEnvironmentPolicy(vs.DISABLE_AUTO_LOADING)
+              vs.register_policy(policy)
 
           plugin_dir = Path({str(plugin_dir)!r})
           os.add_dll_directory(str(plugin_dir))
           os.add_dll_directory(str(plugin_dir / "vsov"))
           os.add_dll_directory(str(plugin_dir / "vsort"))
 
-          core = vs.core
-          for name in ("vsncnn", "vsov", "vsort"):
-              path = plugin_dir / f"{{name}}.dll"
-              print(f"Loading {{path}}")
-              try:
-                  core.std.LoadPlugin(path=str(path))
-              except vs.Error as exc:
-                  if "already loaded" not in str(exc):
-                      raise
-                  print(f"Already loaded: {{path}}")
+          try:
+              core = vs.core
+              for name in ("vsncnn", "vsov", "vsort"):
+                  path = plugin_dir / f"{{name}}.dll"
+                  print(f"Loading {{path}}")
+                  try:
+                      core.std.LoadPlugin(path=str(path))
+                  except vs.Error as exc:
+                      if "already loaded" not in str(exc):
+                          raise
+                      print(f"Already loaded: {{path}}")
 
-          print("ncnn:", core.ncnn.Version())
-          print("ov:", core.ov.Version())
-          print("ort:", core.ort.Version())
+              print("ncnn:", core.ncnn.Version())
+              print("ov:", core.ov.Version())
+              print("ort:", core.ort.Version())
+          finally:
+              if policy is not None:
+                  policy.close()
           """
           completed = subprocess.run(
               [sys.executable, "-c", load_script],
