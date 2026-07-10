@@ -261,7 +261,7 @@ static std::variant<std::string, ov::AnyMap> getConfig(
         } else if (type == ptFloat) {
             config[key] = std::to_string(vsapi->mapGetFloat(out_map, key, 0, nullptr));
         } else {
-            return set_error("unknown type of key \""s + key + "\": (" + type + ")");
+            return set_error("unknown type of key \""s + key + "\": (" + std::to_string(type) + ")");
         }
     }
 
@@ -734,7 +734,7 @@ static void VS_CC vsOvCreate(
         }
 
         VSCoreInfo core_info;
-        vsapi->getCoreInfo2(core, &core_info);
+        vsapi->getCoreInfo(core, &core_info);
         d->infer_requests.reserve(core_info.numThreads);
     }
 
