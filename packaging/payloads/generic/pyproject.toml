@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vs-mlrt-payload-generic"
-version = "3.23.2.post1"
+version = "3.23.2.post2"
 description = "Release-backed vs-mlrt generic Windows payload"
 requires-python = ">=3.12"
 

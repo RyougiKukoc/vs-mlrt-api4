@@ -45,7 +45,7 @@ If pip hides build-backend output while large assets download, add `-v` to the
 install command.
 
 To update an existing VCS installation, rerun the same command with `-U`. The
-`3.23.2.post1` packaging revision upgrades the generic payload selector, so pip
+`3.23.2.post2` packaging revision upgrades the generic payload selector, so pip
 uninstalls the old duplicated `vsov/` layout before installing the flat layout.
 The wrapper still reports upstream API version `3.23.2`.
 

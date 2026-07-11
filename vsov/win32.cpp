@@ -6,8 +6,6 @@
 #include <stdexcept>
 #include <filesystem>
 
-#define DLL_DIR L"vsov"
-
 #include <iostream>
 
 namespace {
@@ -42,7 +40,7 @@ static fs::path dllDir() {
 }
 
 FARPROC loadDLLs() {
-    fs::path dir = dllDir() / DLL_DIR;
+    fs::path dir = dllDir();
     HMODULE h = nullptr;
     for (const auto dll: dlls) {
         fs::path p = dir / dll;
