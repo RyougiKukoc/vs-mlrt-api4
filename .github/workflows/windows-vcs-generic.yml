@@ -41,14 +41,14 @@ jobs:
           Move-Item -Path (Get-ChildItem -Path _deps -Directory -Filter "vapoursynth-*" | Select-Object -First 1).FullName -Destination _deps\vapoursynth
           "VS_INCLUDE=$pwd\_deps\vapoursynth\include" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
 
-      - name: Cache ncnn and ort ONNX
+      - name: Cache ncnn ONNX
         id: cache-onnx-ncnn
         uses: actions/cache@v5
         with:
           path: vsncnn/onnx/install
           key: ${{ runner.os }}-vsmlrt-generic-onnx-ncnn-v1
 
-      - name: Checkout ncnn and ort ONNX
+      - name: Checkout ncnn ONNX
         if: steps.cache-onnx-ncnn.outputs.cache-hit != 'true'
         uses: actions/checkout@v6
         with:
@@ -56,7 +56,7 @@ jobs:
           ref: v1.19.0
           path: vsncnn/onnx
 
-      - name: Build ncnn and ort ONNX
+      - name: Build ncnn ONNX
         if: steps.cache-onnx-ncnn.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
@@ -189,56 +189,19 @@ jobs:
           cmake --build vsov\build --verbose
           cmake --install vsov\build --prefix vsov\install
 
-      - name: Download ONNX Runtime
-        shell: pwsh
-        run: |
-          curl.exe -fsSL -o vsort\ortgpu.zip https://github.com/AmusementClub/onnxruntime/releases/download/orttraining_rc2-10525-gecb26fb775-250906-0716/onnxruntime-gpu-win64.zip
-          7z x -y vsort\ortgpu.zip "-ovsort"
-
-      - name: Download DirectML
-        shell: pwsh
-        run: |
-          curl.exe -fsSL -o vsort\directml.nupkg https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4
-          7z x -y vsort\directml.nupkg "-ovsort\dml"
-
-      - name: Configure vsort
-        shell: pwsh
-        run: |
-          cmake -S vsort -B vsort\build -G Ninja -LA `
-            -D CMAKE_BUILD_TYPE=Release `
-            -D CMAKE_PREFIX_PATH="$pwd\vsncnn\onnx\install" `
-            -D CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -D VAPOURSYNTH_INCLUDE_DIRECTORY="$env:VS_INCLUDE" `
-            -D ONNX_RUNTIME_API_DIRECTORY="$pwd\vsort\onnxruntime-gpu\include\onnxruntime" `
-            -D ONNX_RUNTIME_LIB_DIRECTORY="$pwd\vsort\onnxruntime-gpu\lib" `
-            -D ENABLE_DML=1 `
-            -D CMAKE_CXX_STANDARD=20
-
-      - name: Build vsort
-        shell: pwsh
-        run: |
-          cmake --build vsort\build --verbose
-          cmake --install vsort\build --prefix vsort\install
-
       - name: Assemble generic payload
         shell: pwsh
         run: |
           $payloadDir = "payload-generic\vsmlrt"
           $ovDir = "$payloadDir\vsov"
-          $ortDir = "$payloadDir\vsort"
-          New-Item -ItemType Directory -Force $payloadDir, $ovDir, $ortDir | Out-Null
+          New-Item -ItemType Directory -Force $payloadDir, $ovDir | Out-Null
 
           Copy-Item vsncnn\install\bin\vsncnn.dll $payloadDir
           Copy-Item vsov\install\bin\vsov.dll $payloadDir
-          Copy-Item vsort\install\bin\vsort.dll $payloadDir
 
           Copy-Item vsov\openvino\runtime\3rdparty\tbb\bin\tbb12.dll $ovDir
           Copy-Item vsov\openvino\runtime\bin\intel64\Release\* $ovDir -Recurse -Force
 
-          Copy-Item vsort\onnxruntime-gpu\bin\*.dll $ortDir -Force
-          Copy-Item vsort\onnxruntime-gpu\lib\*.dll $ortDir -ErrorAction SilentlyContinue -Force
-          Copy-Item vsort\dml\bin\x64-win\DirectML.dll $ortDir -Force
-          Remove-Item "$ortDir\onnxruntime_providers_*.dll" -Force -ErrorAction SilentlyContinue
           Copy-Item "$ovDir\*.dll" $payloadDir -Force
 
       - name: Inspect generic payload
@@ -247,12 +210,9 @@ jobs:
           $required = @(
             "payload-generic\vsmlrt\vsncnn.dll",
             "payload-generic\vsmlrt\vsov.dll",
-            "payload-generic\vsmlrt\vsort.dll",
             "payload-generic\vsmlrt\openvino.dll",
             "payload-generic\vsmlrt\vsov\openvino.dll",
-            "payload-generic\vsmlrt\vsov\tbb12.dll",
-            "payload-generic\vsmlrt\vsort\onnxruntime.dll",
-            "payload-generic\vsmlrt\vsort\DirectML.dll"
+            "payload-generic\vsmlrt\vsov\tbb12.dll"
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) {
@@ -271,9 +231,14 @@ jobs:
           if (Test-Path "payload-generic\vsmlrt\vsmlrt-cuda") {
             throw "Generic payload must not contain CUDA runtime files."
           }
-          foreach ($path in @("payload-generic\vsmlrt\onnxruntime.dll", "payload-generic\vsmlrt\DirectML.dll")) {
+          foreach ($path in @(
+            "payload-generic\vsmlrt\vsort.dll",
+            "payload-generic\vsmlrt\vsort",
+            "payload-generic\vsmlrt\onnxruntime.dll",
+            "payload-generic\vsmlrt\DirectML.dll"
+          )) {
             if (Test-Path -LiteralPath $path) {
-              throw "ORT runtime DLL should stay under vsort/: $path"
+              throw "Generic payload must not contain ORT/DirectML files: $path"
             }
           }
           Get-ChildItem -Path payload-generic\vsmlrt -Recurse |
@@ -294,7 +259,7 @@ jobs:
           plugin_dir = Path("payload-generic/vsmlrt").resolve()
 
           core = vs.core
-          for name in ("vsncnn", "vsov", "vsort"):
+          for name in ("vsncnn", "vsov"):
               dll = plugin_dir / f"{name}.dll"
               try:
                   core.std.LoadPlugin(path=str(dll))
@@ -304,7 +269,6 @@ jobs:
 
           print(core.ncnn.Version())
           print(core.ov.Version())
-          print(core.ort.Version())
           print("Loaded generic payload:", plugin_dir)
           '@ | python -
 

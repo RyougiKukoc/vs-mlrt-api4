@@ -15,7 +15,7 @@ Requirements:
 - Python 3.9 or newer.
 - A VapourSynth R75+ Python environment.
 - For `generic`: a working runtime for the backend you use:
-  `ncnn`/Vulkan, `ov`/OpenVINO, or `ort`/DirectML or CPU.
+  `ncnn`/Vulkan or `ov`/OpenVINO.
 - For `cu121` and `cu129`: an NVIDIA driver compatible with the selected CUDA
   payload.
 
@@ -78,7 +78,7 @@ as `cu121,generic` do not duplicate `vsmlrt.py` or the model files.
 
 | Extra | Native plugins | Runtime payload | Installed plugin directory |
 | --- | --- | --- | --- |
-| `generic` | `vsncnn`, `vsov`, `vsort` | ncnn, OpenVINO, ONNX Runtime, DirectML support DLLs | `site-packages/vapoursynth/plugins/vsmlrt/` |
+| `generic` | `vsncnn`, `vsov` | ncnn and OpenVINO support DLLs | `site-packages/vapoursynth/plugins/vsmlrt/` |
 | `cu121` | `vstrt` | CUDA 12.1.1, TensorRT 8.6.1.6, cuDNN | `site-packages/vapoursynth/plugins/vsmlrt/` |
 | `cu129` | `vstrt`, `vstrt_rtx` | CUDA 12.9.1, TensorRT 11.1.0.106, TensorRT-RTX 1.5.0.114, cuDNN | `site-packages/vapoursynth/plugins/vsmlrt/` |
 
@@ -89,11 +89,9 @@ the upstream integrated release layout:
 site-packages/vapoursynth/plugins/vsmlrt/
   models/
   vsov/
-  vsort/
   vsmlrt-cuda/
   vsncnn.dll
   vsov.dll
-  vsort.dll
   vstrt.dll
   vstrt_rtx.dll
 ```
@@ -102,8 +100,45 @@ Only the files for the selected extras are present. `vstrt_rtx.dll` is installed
 only by `cu129`. `vsmlrt.py` resolves models from `vsmlrt/models`, and
 TensorRT helper executables are resolved from `vsmlrt/vsmlrt-cuda`. The wheel
 also installs a small DLL search-path helper. OpenVINO runtime DLLs are also
-copied to the plugin root for VapourSynth R77 autoload compatibility; ONNX
-Runtime and DirectML stay under `vsort/` in newly built generic payloads.
+copied to the plugin root for VapourSynth R77 autoload compatibility.
+
+## Backend Scope
+
+This fork intentionally publishes a smaller Windows payload set than upstream.
+The released VCS extras are:
+
+- `generic`: `vsncnn` and `vsov`.
+- `cu121`: `vstrt` built for the CUDA 12.1/TensorRT 8.6 line.
+- `cu129`: `vstrt` plus `vstrt_rtx` built for the CUDA 12.9/TensorRT 11 line.
+
+The `vsort`/ONNX Runtime backend was migrated to API4 in source, but this fork
+does not publish it in the `generic` payload. For our target Windows users,
+ncnn/Vulkan has no obvious practical disadvantage compared with ORT/DirectML,
+while ORT substantially increases package size and DLL placement complexity.
+Users who explicitly need ORT should use upstream packages or build `vsort`
+from source.
+
+`vsmigx` and the CoreML path are not part of this fork's migration/release
+scope. The maintainer does not have suitable ROCm/MIGraphX or Apple/CoreML
+hardware for meaningful build and runtime validation, so those paths are left
+close to upstream instead of being presented as supported payloads.
+
+Anyone who wants to continue those backends can use the published migration
+skill and this fork's patch as the starting point:
+
+- Skill repository:
+  <https://github.com/RyougiKukoc/vapoursynth-api3-to-api4-skill>
+- Upstream comparison base:
+  `AmusementClub/vs-mlrt` tag `v15.16`,
+  commit `885e8bb827fc431fce8e3109e7d60b0c38aa2035`.
+
+A useful local comparison command is:
+
+```powershell
+git remote add upstream https://github.com/AmusementClub/vs-mlrt.git 2>$null
+git fetch upstream tag v15.16
+git diff 885e8bb827fc431fce8e3109e7d60b0c38aa2035..HEAD
+```
 
 ## Release Asset Layout
 
@@ -149,10 +184,10 @@ by the wrapper.
 
 - `scripts/vsmlrt.py`: Python wrapper and model-facing API.
 - `vstrt/`: TensorRT and TensorRT-RTX plugin source plus custom `trtexec` build files.
-- `vsort/`: ONNX Runtime backend source.
+- `vsort/`: ONNX Runtime backend source, API4-migrated but not published by this fork.
 - `vsov/`: OpenVINO backend source.
 - `vsncnn/`: ncnn Vulkan backend source.
-- `vsmigx/`: MIGraphX backend source, retained from upstream but not a focus of this fork.
+- `vsmigx/`: MIGraphX backend source, retained from upstream and not modified or published by this fork.
 - `common/`: shared helper code used by native plugins.
 - `packaging/payloads/`: pip selector packages for `generic`, `cu121`, `cu129`, and `models`.
 - `.github/workflows/`: CI, packaging, smoke tests, and release publication.
@@ -172,7 +207,7 @@ Windows release workflows:
 - `.github/workflows/windows-vcs-models.yml` builds and publishes the shared
   `models` release asset.
 - `.github/workflows/windows-vcs-generic.yml` builds the `generic` native
-  payload with `vsncnn`, `vsov`, and `vsort`.
+  payload with `vsncnn` and `vsov`.
 - `.github/workflows/windows-vcs-package.yml` builds the `cu121` and `cu129`
   TensorRT payload assets.
 - `.github/workflows/windows-vcs-install-smoke.yml` installs from the default

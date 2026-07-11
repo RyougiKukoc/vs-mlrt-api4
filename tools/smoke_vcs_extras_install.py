@@ -222,7 +222,7 @@ import vapoursynth as vs
 plugin_dir = Path({str(plugin_dir)!r})
 
 core = vs.core
-for name in ("vsncnn", "vsov", "vsort"):
+for name in ("vsncnn", "vsov"):
     path = plugin_dir / f"{{name}}.dll"
     print(f"Loading {{path}}")
     try:
@@ -234,7 +234,6 @@ for name in ("vsncnn", "vsov", "vsort"):
 
 print("ncnn:", core.ncnn.Version())
 print("ov:", core.ov.Version())
-print("ort:", core.ort.Version())
 """
     completed = subprocess.run(
         [sys.executable, "-c", load_script],
@@ -260,7 +259,6 @@ import vapoursynth as vs
 core = vs.core
 print("ncnn:", core.ncnn.Version())
 print("ov:", core.ov.Version())
-print("ort:", core.ort.Version())
 """
     completed = subprocess.run(
         [sys.executable, "-c", load_script],
@@ -311,8 +309,6 @@ def verify_generic_imports(plugin_dir: Path) -> None:
     targets = [
         plugin_dir / "vsncnn.dll",
         plugin_dir / "vsov.dll",
-        plugin_dir / "vsort.dll",
-        plugin_dir / "vsort" / "onnxruntime.dll",
     ]
     bad: list[str] = []
     for target in targets:
@@ -512,15 +508,22 @@ def main() -> None:
             [
                 plugin_prefix / "vsncnn.dll",
                 plugin_prefix / "vsov.dll",
-                plugin_prefix / "vsort.dll",
                 plugin_prefix / "openvino.dll",
                 plugin_prefix / "vsov/openvino.dll",
                 plugin_prefix / "vsov/tbb12.dll",
-                plugin_prefix / "vsort/onnxruntime.dll",
-                plugin_prefix / "vsort/DirectML.dll",
             ],
         )
         generic_dir = generic_paths[plugin_prefix / "vsncnn.dll"].parent
+        forbid_paths(
+            roots,
+            [
+                plugin_prefix / "vsort.dll",
+                plugin_prefix / "vsort",
+                plugin_prefix / "onnxruntime.dll",
+                plugin_prefix / "DirectML.dll",
+            ],
+            "Generic install unexpectedly contains ORT/DirectML payload",
+        )
     else:
         forbid_paths(
             roots,

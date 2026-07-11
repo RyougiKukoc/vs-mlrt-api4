@@ -602,11 +602,13 @@ static void VS_CC vsTrtCreate(
         deps.push_back({ node, rpStrictSpatial });
     }
 
+    auto data = d.get();
     vsapi->createVideoFilter(
-        out, "Model", d->out_vi.get(),
+        out, "Model", data->out_vi.get(),
         vsTrtGetFrame, vsTrtFree,
-        fmParallel, deps.data(), static_cast<int>(deps.size()), d.release(), core
+        fmParallel, deps.data(), static_cast<int>(deps.size()), data, core
     );
+    d.release();
 }
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit2(

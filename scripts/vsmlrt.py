@@ -40,11 +40,46 @@ except Exception:
 from vapoursynth import core
 
 
-def _map_data_to_str(value: typing.Union[str, bytes, os.PathLike]) -> str:
-    value = os.fspath(value)
+def _map_data_to_str(value: object) -> str:
+    if isinstance(value, os.PathLike):
+        value = os.fspath(value)
     if isinstance(value, bytes):
         return value.decode()
-    return value
+    return str(value)
+
+
+def _map_data_to_str_set(value: object) -> typing.Set[str]:
+    if isinstance(value, (str, bytes, os.PathLike)):
+        return {_map_data_to_str(value)}
+    try:
+        return {_map_data_to_str(item) for item in typing.cast(typing.Iterable[object], value)}
+    except TypeError:
+        return {_map_data_to_str(value)}
+
+
+def _version_tuple(value: object, width: int = 3) -> typing.Tuple[int, ...]:
+    text = _map_data_to_str(value).split("-", 1)[0]
+    numbers = []
+    for part in text.split("."):
+        digits = ""
+        for char in part:
+            if not char.isdigit():
+                break
+            digits += char
+        if not digits:
+            break
+        numbers.append(int(digits))
+    if len(numbers) < width:
+        numbers.extend([0] * (width - len(numbers)))
+    return tuple(numbers[:width])
+
+
+def _plugin_version_tuple(plugin_name: str, key: str, default: str = "0.0.0") -> typing.Tuple[int, ...]:
+    try:
+        value = getattr(core, plugin_name).Version().get(key, default)
+    except AttributeError:
+        value = default
+    return _version_tuple(value)
 
 
 def get_plugins_path() -> str:
@@ -960,11 +995,13 @@ def get_rife_input(clip: vs.VideoNode) -> typing.List[vs.VideoNode]:
     gray_format = vs.GRAYS if clip.format.bits_per_sample == 32 else vs.GRAYH
 
 
-    if (hasattr(core, 'akarin') and
-        b"width" in core.akarin.Version()["expr_features"] and
-        b"height" in core.akarin.Version()["expr_features"]
-    ):
-        if b"fp16" in core.akarin.Version()["expr_features"]:
+    akarin_expr_features = (
+        _map_data_to_str_set(core.akarin.Version().get("expr_features", []))
+        if hasattr(core, 'akarin')
+        else set()
+    )
+    if "width" in akarin_expr_features and "height" in akarin_expr_features:
+        if "fp16" in akarin_expr_features:
             empty = clip.std.BlankClip(format=gray_format, length=1)
         else:
             empty = clip.std.BlankClip(format=vs.GRAYS, length=1)
@@ -2833,11 +2870,7 @@ def _inference(
         kwargs["flexible_output_prop"] = flexible_output_prop
 
     if isinstance(backend, (Backend.ORT_CPU, Backend.ORT_DML, Backend.ORT_COREML, Backend.ORT_CUDA)):
-        version_list = core.ort.Version().get("onnxruntime_version", b"0.0.0").split(b'.')
-        if len(version_list) != 3:
-            version = (0, 0, 0)
-        else:
-            version = tuple(map(int, version_list))
+        version = _plugin_version_tuple("ort", "onnxruntime_version")
 
         if version >= (1, 18, 0):
             kwargs["output_format"] = backend.output_format
@@ -2882,11 +2915,7 @@ def _inference(
             **kwargs
         )
     elif isinstance(backend, Backend.ORT_CUDA):
-        version_list = core.ort.Version().get("onnxruntime_version", b"0.0.0").split(b'.')
-        if len(version_list) != 3:
-            version = (0, 0, 0)
-        else:
-            version = tuple(map(int, version_list))
+        version = _plugin_version_tuple("ort", "onnxruntime_version")
 
         if version >= (1, 18, 0):
             kwargs["prefer_nhwc"] = backend.prefer_nhwc
@@ -2906,7 +2935,7 @@ def _inference(
             **kwargs
         )
     elif isinstance(backend, Backend.OV_CPU):
-        version = tuple(map(int, core.ov.Version().get("openvino_version", b"0.0.0").split(b'-')[0].split(b'.')))
+        version = _plugin_version_tuple("ov", "openvino_version")
 
         if version >= (2024, 0, 0):
             config_dict = dict(
@@ -2940,7 +2969,7 @@ def _inference(
             **kwargs
         )
     elif isinstance(backend, Backend.OV_GPU):
-        version = tuple(map(int, core.ov.Version().get("openvino_version", b"0.0.0").split(b'-')[0].split(b'.')))
+        version = _plugin_version_tuple("ov", "openvino_version")
 
         if version >= (2024, 0, 0):
             config_dict = dict(
