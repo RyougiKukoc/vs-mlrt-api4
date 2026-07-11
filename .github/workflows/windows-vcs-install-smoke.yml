@@ -1,310 +1,69 @@
-name: Smoke VCS install
+name: Smoke VCS extras install
 
 on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - pyproject.toml
+      - packaging/**
+      - scripts/vsmlrt.py
+      - tools/smoke_vcs_extras_install.py
+      - .github/workflows/windows-vcs-install-smoke.yml
   workflow_dispatch:
-    inputs:
-      cuda-flavor:
-        description: CUDA payload line to install
-        type: choice
-        required: true
-        default: cu121
-        options:
-          - all
-          - cu121
-          - cu129
+
+permissions:
+  contents: read
 
 jobs:
   install:
     strategy:
       fail-fast: false
       matrix:
-        cuda_flavor: [cu121, cu129]
+        include:
+          - name: generic
+            extras: generic
+            needs_vulkan: true
+          - name: cu121
+            extras: cu121
+            needs_vulkan: false
+          - name: cu129
+            extras: cu129
+            needs_vulkan: false
+          - name: cu121 plus generic
+            extras: cu121,generic
+            needs_vulkan: true
+          - name: cu129 plus generic
+            extras: cu129,generic
+            needs_vulkan: true
     runs-on: windows-2022
 
     steps:
-      - name: Select CUDA flavor
-        id: select
-        shell: pwsh
-        env:
-          INPUT_CUDA_FLAVOR: ${{ inputs['cuda-flavor'] }}
-          MATRIX_CUDA_FLAVOR: ${{ matrix.cuda_flavor }}
-        run: |
-          $shouldBuild = (
-            $env:INPUT_CUDA_FLAVOR -eq "all" -or
-            $env:INPUT_CUDA_FLAVOR -eq $env:MATRIX_CUDA_FLAVOR
-          )
-          "should_build=$($shouldBuild.ToString().ToLowerInvariant())" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
+      - name: Checkout repo
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        if: steps.select.outputs.should_build == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install package from tag
-        if: steps.select.outputs.should_build == 'true'
+      - name: Setup Vulkan SDK
+        if: matrix.needs_vulkan
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe?Human=true" -OutFile VulkanSDK.exe
+          $installer = Start-Process -FilePath VulkanSDK.exe -Wait -PassThru -ArgumentList "--accept-licenses --default-answer --confirm-command install"
+          $installer.WaitForExit()
+          "C:\VulkanSDK\1.4.321.1\Bin" | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
+
+      - name: Install package from default branch extras
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           python -m pip install --no-cache-dir pefile
-          python -m pip install --no-cache-dir "vs-mlrt @ git+https://github.com/${{ github.repository }}.git@${{ matrix.cuda_flavor }}"
+          python -m pip install --no-cache-dir "vs-mlrt[${{ matrix.extras }}] @ git+https://github.com/${{ github.repository }}.git"
 
       - name: Verify installed layout
-        if: steps.select.outputs.should_build == 'true'
         shell: pwsh
-        env:
-          EXPECTED_CUDA_FLAVOR: ${{ matrix.cuda_flavor }}
-        run: |
-          @'
-          import os
-          import re
-          import site
-          import subprocess
-          import sys
-          from pathlib import Path
-
-          import pefile
-
-          roots = [Path(p) for p in site.getsitepackages()]
-          user_site = site.getusersitepackages()
-          if user_site:
-              roots.append(Path(user_site))
-
-          def find(rel):
-              for root in roots:
-                  candidate = root / rel
-                  if candidate.exists():
-                      return candidate
-              return None
-
-          def find_glob(pattern):
-              for root in roots:
-                  matches = list(root.glob(pattern))
-                  if matches:
-                      return matches[0]
-              return None
-
-          flavor = os.environ["EXPECTED_CUDA_FLAVOR"]
-          trt_suffix = "_11" if flavor == "cu129" else ""
-          required = [
-              Path("vsmlrt.py"),
-              Path("vapoursynth/plugins/vsmlrt/manifest.vs"),
-              Path("vapoursynth/plugins/vsmlrt/vstrt.dll"),
-              Path(f"vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvinfer{trt_suffix}.dll"),
-              Path(f"vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvinfer_plugin{trt_suffix}.dll"),
-              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cublas64_12.dll"),
-              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cublasLt64_12.dll"),
-              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cudart64_12.dll"),
-              Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/trtexec.exe"),
-              Path("vapoursynth/plugins/vsmlrt/models/dpir"),
-              Path("vapoursynth/plugins/vsmlrt/models/rife"),
-              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/animejanaiV2L1.onnx"),
-              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/animejanaiV3-HD-L1.onnx"),
-              Path("vapoursynth/plugins/vsmlrt/models/RealESRGANv2/Ani4Kv2-G6i2-Compact.onnx"),
-          ]
-          if flavor == "cu129":
-              required.append(Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"))
-              required.append(Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvonnxparser_11.dll"))
-              required.append(Path("vapoursynth/plugins/vsmlrt/vsmlrt-cuda/tensorrt_rtx_1_5.dll"))
-
-          missing = [str(rel) for rel in required if find(rel) is None]
-          missing.extend(
-              pattern
-              for pattern in [
-                  "vapoursynth/plugins/vsmlrt/vsmlrt-cuda/cudnn*.dll",
-                  "vapoursynth/plugins/vsmlrt/vsmlrt-cuda/nvrtc*.dll",
-              ]
-              if find_glob(pattern) is None
-          )
-          if missing:
-              raise SystemExit("Missing installed files: " + ", ".join(missing))
-
-          rtx = find(Path("vapoursynth/plugins/vsmlrt/vstrt_rtx.dll"))
-          if flavor == "cu121" and rtx is not None:
-              raise SystemExit("cu121 install unexpectedly contains vstrt_rtx.dll")
-
-          manifest = find(Path("vapoursynth/plugins/vsmlrt/manifest.vs"))
-          print(manifest.read_text(encoding="ascii"))
-          print(f"Verified {flavor} install under: {manifest.parent}")
-
-          cuda_dir = manifest.parent / "vsmlrt-cuda"
-          root_dirs = [manifest.parent, cuda_dir]
-          system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-          search_dirs = root_dirs + [
-              *roots,
-              *(root / "vapoursynth" for root in roots),
-              system_root / "System32",
-              system_root / "SysWOW64",
-          ]
-
-          def import_names(path):
-              pe = pefile.PE(str(path), fast_load=True)
-              names = []
-              for entry_name in ["IMAGE_DIRECTORY_ENTRY_IMPORT", "IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT"]:
-                  try:
-                      pe.parse_data_directories(
-                          directories=[pefile.DIRECTORY_ENTRY[entry_name]]
-                      )
-                  except Exception:
-                      continue
-                  attr = "DIRECTORY_ENTRY_IMPORT"
-                  if entry_name.endswith("DELAY_IMPORT"):
-                      attr = "DIRECTORY_ENTRY_DELAY_IMPORT"
-                  for entry in getattr(pe, attr, []):
-                      names.append(entry.dll.decode("ascii", errors="ignore").lower())
-              return sorted(set(names))
-
-          def resolve_import(name):
-              if name.startswith(("api-ms-win-", "ext-ms-win-")):
-                  return Path("<windows-api-set>")
-              for directory in search_dirs:
-                  candidate = directory / name
-                  if candidate.exists():
-                      return candidate
-              return None
-
-          def check_import_tree(paths):
-              queue = list(paths)
-              seen = set()
-              missing = []
-              missing_driver = []
-              while queue:
-                  path = queue.pop(0)
-                  key = str(path).lower()
-                  if key in seen:
-                      continue
-                  seen.add(key)
-                  for name in import_names(path):
-                      resolved = resolve_import(name)
-                      if resolved is None:
-                          if name == "nvcuda.dll":
-                              missing_driver.append(f"{path.name} -> {name}")
-                              continue
-                          missing.append(f"{path.name} -> {name}")
-                          continue
-                      if resolved.parent in root_dirs and resolved.name.lower().endswith(".dll"):
-                          queue.append(resolved)
-              if missing:
-                  raise SystemExit("Missing PE imports:\n" + "\n".join(sorted(set(missing))))
-              return sorted(set(missing_driver))
-
-          def check_dll_string_refs(path):
-              data = path.read_bytes()
-              refs = sorted(
-                  set(
-                      match.group(0).decode("ascii", errors="ignore").lower()
-                      for match in re.finditer(rb"[A-Za-z0-9_.+-]+\.dll", data)
-                  )
-              )
-              tokens = (
-                  "cublas",
-                  "cuda",
-                  "cudnn",
-                  "cufft",
-                  "cudart",
-                  "nvinfer",
-                  "nvrtc",
-                  "nv",
-                  "onnx",
-                  "protobuf",
-                  "zlib",
-              )
-              interesting = [ref for ref in refs if any(token in ref for token in tokens)]
-              missing = []
-              driver_refs = []
-              print(f"DLL string refs in {path.name}:")
-              for ref in interesting:
-                  status = "found" if resolve_import(ref) is not None else "missing"
-                  if ref == "nvcuda.dll":
-                      status = "driver"
-                      driver_refs.append(f"{path.name} -> {ref}")
-                  elif status == "missing":
-                      missing.append(f"{path.name} -> {ref}")
-                  print(f"  {status}: {ref}")
-              if missing:
-                  raise SystemExit("Missing DLL string refs:\n" + "\n".join(missing))
-              return driver_refs
-
-          pe_targets = [
-              manifest.parent / "vstrt.dll",
-              cuda_dir / f"nvinfer{trt_suffix}.dll",
-              cuda_dir / f"nvinfer_plugin{trt_suffix}.dll",
-          ]
-          if flavor == "cu129":
-              pe_targets.extend(
-                  [
-                      manifest.parent / "vstrt_rtx.dll",
-                      cuda_dir / "tensorrt_rtx_1_5.dll",
-                  ]
-              )
-          missing_driver = check_import_tree(pe_targets)
-          missing_driver.extend(check_dll_string_refs(cuda_dir / f"nvinfer_plugin{trt_suffix}.dll"))
-          if missing_driver:
-              print("Allowed missing NVIDIA driver imports on GitHub runner:")
-              print("\n".join(sorted(set(missing_driver))))
-
-          load_script = f"""
-          from pathlib import Path
-          import vapoursynth as vs
-          import vsmlrt
-
-          expected_plugins_path = Path({str(manifest.parent)!r}).resolve()
-          actual_plugins_path = Path(vsmlrt.plugins_path).resolve()
-          if actual_plugins_path != expected_plugins_path:
-              raise RuntimeError(f"vsmlrt.plugins_path={{actual_plugins_path}} != {{expected_plugins_path}}")
-          print(f"Imported vsmlrt from {{vsmlrt.__file__}}")
-
-          core = vs.core
-
-          def load_plugin(path):
-              try:
-                  core.std.LoadPlugin(path=str(path))
-              except vs.Error as exc:
-                  if "already loaded" not in str(exc):
-                      raise
-
-          load_plugin({str(manifest.parent / "vstrt.dll")!r})
-          if {flavor == "cu129"!r}:
-              load_plugin({str(manifest.parent / "vstrt_rtx.dll")!r})
-          """
-          completed = subprocess.run(
-              [sys.executable, "-c", load_script],
-              text=True,
-              stdout=subprocess.PIPE,
-              stderr=subprocess.PIPE,
-              check=False,
-          )
-          if completed.stdout:
-              print(completed.stdout, end="")
-          if completed.stderr:
-              print(completed.stderr, file=sys.stderr, end="")
-          if completed.returncode:
-              raise SystemExit(completed.returncode)
-          stderr_lines = completed.stderr.splitlines()
-          if missing_driver:
-              allowed_driver_loader_failures = {
-                  item.split(" -> ", 1)[0].lower()
-                  for item in missing_driver
-                  if item.lower().endswith("-> nvcuda.dll")
-              }
-
-              def is_allowed_driver_loader_failure(line):
-                  lower = line.lower()
-                  if "failed to preload" in lower:
-                      return any(name in lower for name in allowed_driver_loader_failures)
-                  if (
-                      flavor == "cu129"
-                      and "vstrt_rtx: tensorrt failed to load" in lower
-                      and "tensorrt_rtx_1_5.dll" in allowed_driver_loader_failures
-                  ):
-                      return True
-                  return False
-
-              stderr_lines = [
-                  line for line in stderr_lines
-                  if not is_allowed_driver_loader_failure(line)
-              ]
-          if any("failed to preload" in line or "TensorRT failed to load" in line for line in stderr_lines):
-              raise SystemExit("TensorRT preload emitted loader errors.")
-          print(f"Loaded VapourSynth plugins for {flavor}")
-          '@ | python -
+        run: python tools/smoke_vcs_extras_install.py --extras "${{ matrix.extras }}"

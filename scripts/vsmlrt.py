@@ -44,9 +44,10 @@ def _map_data_to_str(value: typing.Union[str, bytes, os.PathLike]) -> str:
 
 
 def get_plugins_path() -> str:
-    package_plugins_path = os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins", "vsmlrt")
-    if os.path.isfile(os.path.join(package_plugins_path, "manifest.vs")):
-        return package_plugins_path
+    package_plugins_root = os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins")
+    legacy_package_plugins_path = os.path.join(package_plugins_root, "vsmlrt")
+    if os.path.isfile(os.path.join(legacy_package_plugins_path, "manifest.vs")):
+        return legacy_package_plugins_path
 
     plugin_names = ("ov", "ort", "ncnn", "trt", "trt_rtx", "migx")
 
@@ -57,14 +58,73 @@ def get_plugins_path() -> str:
         except AttributeError:
             continue
 
-    raise RuntimeError("vsmlrt: cannot load any filters")
+    for package_name in ("vsmlrt-generic", "vsmlrt-cu129", "vsmlrt-cu121"):
+        package_plugins_path = os.path.join(package_plugins_root, package_name)
+        if os.path.isfile(os.path.join(package_plugins_path, "manifest.vs")):
+            return package_plugins_path
+
+    return legacy_package_plugins_path
+
+
+def _get_plugin_path(plugin_name: str) -> typing.Optional[str]:
+    try:
+        path = getattr(core, plugin_name).Version()["path"]
+        return os.path.dirname(_map_data_to_str(path))
+    except AttributeError:
+        return None
+
+
+def _path_variants(path: str) -> typing.Iterator[str]:
+    yield path
+    if platform.system() == "Windows" and not os.path.splitext(path)[1]:
+        yield f"{path}.exe"
+
+
+def _get_payload_path(
+    plugin_names: typing.Sequence[str],
+    package_names: typing.Sequence[str],
+    *parts: str,
+) -> str:
+    for plugin_name in plugin_names:
+        plugin_path = _get_plugin_path(plugin_name)
+        if plugin_path is None:
+            continue
+        candidate = os.path.join(plugin_path, *parts)
+        for variant in _path_variants(candidate):
+            if os.path.exists(variant):
+                return variant
+
+    package_plugins_root = os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins")
+    for package_name in package_names:
+        candidate = os.path.join(package_plugins_root, package_name, *parts)
+        for variant in _path_variants(candidate):
+            if os.path.exists(variant):
+                return variant
+
+    fallback = os.path.join(plugins_path, *parts)
+    for variant in _path_variants(fallback):
+        if os.path.exists(variant):
+            return variant
+    return fallback
+
+
+def get_models_path() -> str:
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "vsmlrt_models", "models"),
+        os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins", "vsmlrt-models", "models"),
+        os.path.join(plugins_path, "models"),
+    ]
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+    return candidates[0]
 
 
 plugins_path: str = get_plugins_path()
-trtexec_path: str = os.path.join(plugins_path, "vsmlrt-cuda", "trtexec")
-migraphx_driver_path: str = os.path.join(plugins_path, "vsmlrt-hip", "migraphx-driver")
-tensorrt_rtx_path: str = os.path.join(plugins_path, "vsmlrt-cuda", "tensorrt_rtx")
-models_path: str = os.path.join(plugins_path, "models")
+trtexec_path: str = _get_payload_path(("trt", "trt_rtx"), ("vsmlrt-cu129", "vsmlrt-cu121"), "vsmlrt-cuda", "trtexec")
+migraphx_driver_path: str = _get_payload_path(("migx",), ("vsmlrt-hip",), "vsmlrt-hip", "migraphx-driver")
+tensorrt_rtx_path: str = _get_payload_path(("trt_rtx", "trt"), ("vsmlrt-cu129",), "vsmlrt-cuda", "tensorrt_rtx")
+models_path: str = get_models_path()
 
 
 class Backend:

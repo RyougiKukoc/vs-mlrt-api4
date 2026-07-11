@@ -19,14 +19,31 @@ dependencies = [
 ]
 
 [project.urls]
-"Source Code" = "https://github.com/AmusementClub/vs-mlrt"
-"Bug Tracker" = "https://github.com/AmusementClub/vs-mlrt/issues"
+"Source Code" = "https://github.com/RyougiKukoc/vs-mlrt-api4"
+"Bug Tracker" = "https://github.com/RyougiKukoc/vs-mlrt-api4/issues"
+
+[project.optional-dependencies]
+generic = [
+    "vs-mlrt-models @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/models",
+    "vs-mlrt-payload-generic @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/generic",
+]
+cu121 = [
+    "vs-mlrt-models @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/models",
+    "vs-mlrt-payload-cu121 @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/cu121",
+]
+cu129 = [
+    "vs-mlrt-models @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/models",
+    "vs-mlrt-payload-cu129 @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/cu129",
+]
 
 [tool.hatch.build.targets.wheel]
 only-include = ["scripts/vsmlrt.py"]
 
 [tool.hatch.build.targets.wheel.sources]
 "scripts" = ""
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.hooks.custom]
 path = "packaging/vsmlrt_build.py"

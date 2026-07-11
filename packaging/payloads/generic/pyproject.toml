@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vs-mlrt-payload-generic"
+version = "3.23.2"
+description = "Release-backed vs-mlrt generic Windows payload"
+requires-python = ">=3.9"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["vs_mlrt_payload_generic"]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"

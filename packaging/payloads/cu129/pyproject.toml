@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vs-mlrt-payload-cu129"
+version = "3.23.2"
+description = "Release-backed vs-mlrt CUDA 12.9 Windows payload"
+requires-python = ">=3.9"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["vs_mlrt_payload_cu129"]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
