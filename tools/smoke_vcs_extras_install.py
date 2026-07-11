@@ -215,15 +215,11 @@ def check_vsmlrt_paths(
 
 def smoke_load_generic(plugin_dir: Path) -> None:
     load_script = f"""
-import os
 from pathlib import Path
 import vapoursynth as vs
 {SUBPROCESS_POLICY_SNIPPET}
 
 plugin_dir = Path({str(plugin_dir)!r})
-os.add_dll_directory(str(plugin_dir))
-os.add_dll_directory(str(plugin_dir / "vsov"))
-os.add_dll_directory(str(plugin_dir / "vsort"))
 
 core = vs.core
 for name in ("vsncnn", "vsov", "vsort"):
@@ -297,6 +293,34 @@ def import_names(path: Path) -> list[str]:
         for entry in getattr(pe, attr, []):
             names.append(entry.dll.decode("ascii", errors="ignore").lower())
     return sorted(set(names))
+
+
+def verify_generic_imports(plugin_dir: Path) -> None:
+    forbidden_tokens = (
+        "cublas",
+        "cuda",
+        "cudnn",
+        "cufft",
+        "cudart",
+        "cupti",
+        "nvcuda",
+        "nvinfer",
+        "nvonnxparser",
+        "nvrtc",
+    )
+    targets = [
+        plugin_dir / "vsncnn.dll",
+        plugin_dir / "vsov.dll",
+        plugin_dir / "vsort.dll",
+        plugin_dir / "vsort" / "onnxruntime.dll",
+    ]
+    bad: list[str] = []
+    for target in targets:
+        for name in import_names(target):
+            if any(token in name for token in forbidden_tokens):
+                bad.append(f"{target.name} -> {name}")
+    if bad:
+        raise SystemExit("Generic payload must not import CUDA/NVIDIA DLLs:\n" + "\n".join(sorted(set(bad))))
 
 
 def verify_cuda_imports(roots: list[Path], plugin_dir: Path, cuda_dir: Path, flavor: str) -> list[str]:
@@ -490,8 +514,6 @@ def main() -> None:
                 plugin_prefix / "vsov.dll",
                 plugin_prefix / "vsort.dll",
                 plugin_prefix / "openvino.dll",
-                plugin_prefix / "onnxruntime.dll",
-                plugin_prefix / "DirectML.dll",
                 plugin_prefix / "vsov/openvino.dll",
                 plugin_prefix / "vsov/tbb12.dll",
                 plugin_prefix / "vsort/onnxruntime.dll",
@@ -577,6 +599,7 @@ def main() -> None:
         return
 
     if include_generic and generic_dir is not None:
+        verify_generic_imports(generic_dir)
         if cuda_flavor is None:
             smoke_autoload_generic()
         smoke_load_generic(generic_dir)

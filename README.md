@@ -101,10 +101,9 @@ site-packages/vapoursynth/plugins/vsmlrt/
 Only the files for the selected extras are present. `vstrt_rtx.dll` is installed
 only by `cu129`. `vsmlrt.py` resolves models from `vsmlrt/models`, and
 TensorRT helper executables are resolved from `vsmlrt/vsmlrt-cuda`. The wheel
-also installs a small DLL
-search-path helper and keeps root-level copies of generic runtime DLLs that are
-directly imported by `vsov.dll` and `vsort.dll`, so VapourSynth R77 autoloading
-works in portable Python environments.
+also installs a small DLL search-path helper. OpenVINO runtime DLLs are also
+copied to the plugin root for VapourSynth R77 autoload compatibility; ONNX
+Runtime and DirectML stay under `vsort/` in newly built generic payloads.
 
 ## Release Asset Layout
 

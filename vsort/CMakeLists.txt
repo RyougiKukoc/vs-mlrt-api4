@@ -56,13 +56,14 @@ if (ENABLE_CUDA)
     target_include_directories(vsort PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
     target_link_libraries(vsort PRIVATE CUDA::cudart_static)
 
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        target_link_options(vsort PRIVATE "/DELAYLOAD:onnxruntime.dll" "delayimp.lib")
-    endif()
 endif()
 
 if (ENABLE_DML)
     add_compile_definitions(ENABLE_DML)
+endif()
+
+if (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND (ENABLE_CUDA OR ENABLE_DML))
+    target_link_options(vsort PRIVATE "/DELAYLOAD:onnxruntime.dll" "delayimp.lib")
 endif()
 
 if(ENABLE_COREML)

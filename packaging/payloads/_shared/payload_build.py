@@ -69,12 +69,11 @@ class ReleasePayloadBuildHook(BuildHookInterface):
         if self.payload_tag != GENERIC_TAG:
             return
 
-        for support_dir_name in ("vsov", "vsort"):
-            support_dir = plugin_dir / support_dir_name
-            if not support_dir.is_dir():
-                continue
-            for dll in support_dir.glob("*.dll"):
-                shutil.copy2(dll, plugin_dir / dll.name)
+        support_dir = plugin_dir / "vsov"
+        if not support_dir.is_dir():
+            return
+        for dll in support_dir.glob("*.dll"):
+            shutil.copy2(dll, plugin_dir / dll.name)
 
     def _find_models_dir(self, extract_dir: Path) -> Path:
         candidates = [

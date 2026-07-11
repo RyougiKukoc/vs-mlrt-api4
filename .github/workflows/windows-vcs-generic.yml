@@ -240,7 +240,6 @@ jobs:
           Copy-Item vsort\dml\bin\x64-win\DirectML.dll $ortDir -Force
           Remove-Item "$ortDir\onnxruntime_providers_*.dll" -Force -ErrorAction SilentlyContinue
           Copy-Item "$ovDir\*.dll" $payloadDir -Force
-          Copy-Item "$ortDir\*.dll" $payloadDir -Force
 
       - name: Inspect generic payload
         shell: pwsh
@@ -250,8 +249,6 @@ jobs:
             "payload-generic\vsmlrt\vsov.dll",
             "payload-generic\vsmlrt\vsort.dll",
             "payload-generic\vsmlrt\openvino.dll",
-            "payload-generic\vsmlrt\onnxruntime.dll",
-            "payload-generic\vsmlrt\DirectML.dll",
             "payload-generic\vsmlrt\vsov\openvino.dll",
             "payload-generic\vsmlrt\vsov\tbb12.dll",
             "payload-generic\vsmlrt\vsort\onnxruntime.dll",
@@ -274,6 +271,11 @@ jobs:
           if (Test-Path "payload-generic\vsmlrt\vsmlrt-cuda") {
             throw "Generic payload must not contain CUDA runtime files."
           }
+          foreach ($path in @("payload-generic\vsmlrt\onnxruntime.dll", "payload-generic\vsmlrt\DirectML.dll")) {
+            if (Test-Path -LiteralPath $path) {
+              throw "ORT runtime DLL should stay under vsort/: $path"
+            }
+          }
           Get-ChildItem -Path payload-generic\vsmlrt -Recurse |
             Sort-Object FullName |
             Select-Object FullName, Length |
@@ -285,15 +287,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install 'vapoursynth>=75'
           @'
-          import os
           from pathlib import Path
 
           import vapoursynth as vs
 
           plugin_dir = Path("payload-generic/vsmlrt").resolve()
-          os.add_dll_directory(str(plugin_dir))
-          os.add_dll_directory(str(plugin_dir / "vsov"))
-          os.add_dll_directory(str(plugin_dir / "vsort"))
 
           core = vs.core
           for name in ("vsncnn", "vsov", "vsort"):
