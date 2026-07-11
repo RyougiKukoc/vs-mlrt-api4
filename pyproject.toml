@@ -7,7 +7,7 @@ name = "vs-mlrt"
 version = "3.23.2"
 description = "VapourSynth ML runtime tools with release-backed Windows payloads"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "AmusementClub" }]

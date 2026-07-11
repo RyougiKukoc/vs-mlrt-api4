@@ -12,7 +12,7 @@ entry point.
 Requirements:
 
 - Windows x64.
-- Python 3.9 or newer.
+- Python 3.12 or newer.
 - A VapourSynth R75+ Python environment.
 - For `generic`: a working runtime for the backend you use:
   `ncnn`/Vulkan or `ov`/OpenVINO.
