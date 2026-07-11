@@ -47,6 +47,29 @@ install command.
 On non-Windows platforms this VCS package does not install native prebuilt
 payloads. Use upstream packages or build the required backend from source.
 
+## Uninstall
+
+Pip extras install separate payload wheels. Therefore
+`pip uninstall vs-mlrt` removes only the Python wrapper package; it does not
+remove models or native backend payloads that were installed by extras.
+
+Uninstall the wrapper together with the payload packages you installed:
+
+```powershell
+pip uninstall -y vs-mlrt vs-mlrt-models vs-mlrt-payload-generic
+pip uninstall -y vs-mlrt vs-mlrt-models vs-mlrt-payload-cu121
+pip uninstall -y vs-mlrt vs-mlrt-models vs-mlrt-payload-cu129
+pip uninstall -y vs-mlrt vs-mlrt-models vs-mlrt-payload-cu121 vs-mlrt-payload-generic
+pip uninstall -y vs-mlrt vs-mlrt-models vs-mlrt-payload-cu129 vs-mlrt-payload-generic
+```
+
+For a full cleanup regardless of which extras were installed, it is safe to
+name all known vs-mlrt packages:
+
+```powershell
+pip uninstall -y vs-mlrt vs-mlrt-models vs-mlrt-payload-generic vs-mlrt-payload-cu121 vs-mlrt-payload-cu129
+```
+
 ## Payload Extras
 
 All extras install the shared model payload once through the `vs-mlrt-models`
