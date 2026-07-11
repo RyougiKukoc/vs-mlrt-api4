@@ -37,7 +37,11 @@ cu129 = [
 ]
 
 [tool.hatch.build.targets.wheel]
-only-include = ["scripts/vsmlrt.py"]
+only-include = [
+    "scripts/vsmlrt.py",
+    "scripts/vsmlrt_dll_paths.py",
+    "scripts/vs_mlrt_dll_paths.pth",
+]
 
 [tool.hatch.build.targets.wheel.sources]
 "scripts" = ""

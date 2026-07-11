@@ -33,6 +33,10 @@ import warnings
 import zlib
 
 import vapoursynth as vs
+try:
+    import vsmlrt_dll_paths  # noqa: F401
+except Exception:
+    pass
 from vapoursynth import core
 
 
@@ -46,7 +50,12 @@ def _map_data_to_str(value: typing.Union[str, bytes, os.PathLike]) -> str:
 def get_plugins_path() -> str:
     package_plugins_root = os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins")
     legacy_package_plugins_path = os.path.join(package_plugins_root, "vsmlrt")
-    if os.path.isfile(os.path.join(legacy_package_plugins_path, "manifest.vs")):
+    known_plugin_files = ("vsncnn.dll", "vsov.dll", "vsort.dll", "vstrt.dll", "vstrt_rtx.dll")
+    if (
+        os.path.isfile(os.path.join(legacy_package_plugins_path, "manifest.vs"))
+        or any(os.path.isfile(os.path.join(legacy_package_plugins_path, name)) for name in known_plugin_files)
+        or os.path.isdir(os.path.join(legacy_package_plugins_path, "models"))
+    ):
         return legacy_package_plugins_path
 
     plugin_names = ("ov", "ort", "ncnn", "trt", "trt_rtx", "migx")
@@ -110,9 +119,9 @@ def _get_payload_path(
 
 def get_models_path() -> str:
     candidates = [
+        os.path.join(plugins_path, "models"),
         os.path.join(os.path.dirname(__file__), "vsmlrt_models", "models"),
         os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins", "vsmlrt-models", "models"),
-        os.path.join(plugins_path, "models"),
     ]
     for candidate in candidates:
         if os.path.isdir(candidate):
@@ -121,9 +130,9 @@ def get_models_path() -> str:
 
 
 plugins_path: str = get_plugins_path()
-trtexec_path: str = _get_payload_path(("trt", "trt_rtx"), ("vsmlrt-cu129", "vsmlrt-cu121"), "vsmlrt-cuda", "trtexec")
+trtexec_path: str = _get_payload_path(("trt", "trt_rtx"), ("vsmlrt", "vsmlrt-cu129", "vsmlrt-cu121"), "vsmlrt-cuda", "trtexec")
 migraphx_driver_path: str = _get_payload_path(("migx",), ("vsmlrt-hip",), "vsmlrt-hip", "migraphx-driver")
-tensorrt_rtx_path: str = _get_payload_path(("trt_rtx", "trt"), ("vsmlrt-cu129",), "vsmlrt-cuda", "tensorrt_rtx")
+tensorrt_rtx_path: str = _get_payload_path(("trt_rtx", "trt"), ("vsmlrt", "vsmlrt-cu129"), "vsmlrt-cuda", "tensorrt_rtx")
 models_path: str = get_models_path()
 
 

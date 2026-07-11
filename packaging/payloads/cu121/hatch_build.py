@@ -10,7 +10,7 @@ from payload_build import ReleasePayloadBuildHook
 
 class CustomBuildHook(ReleasePayloadBuildHook):
     payload_tag = "cu121"
-    install_name = "vsmlrt-cu121"
+    install_name = "vsmlrt"
 
 
 def get_build_hook():

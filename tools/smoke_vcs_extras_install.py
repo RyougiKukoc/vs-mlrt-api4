@@ -257,6 +257,32 @@ print("ort:", core.ort.Version())
         raise SystemExit("Generic preload emitted loader errors.")
 
 
+def smoke_autoload_generic() -> None:
+    load_script = """
+import vapoursynth as vs
+
+core = vs.core
+print("ncnn:", core.ncnn.Version())
+print("ov:", core.ov.Version())
+print("ort:", core.ort.Version())
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", load_script],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.stdout:
+        print(completed.stdout, end="")
+    if completed.stderr:
+        print(completed.stderr, file=sys.stderr, end="")
+    if completed.returncode:
+        raise SystemExit(completed.returncode)
+    if any("failed to load" in line.lower() or "failed to preload" in line.lower() for line in completed.stderr.splitlines()):
+        raise SystemExit("Generic autoload emitted loader errors.")
+
+
 def import_names(path: Path) -> list[str]:
     import pefile
 
@@ -439,18 +465,19 @@ def main() -> None:
     for root in reversed(roots):
         sys.path.insert(0, str(root))
 
+    plugin_prefix = Path("vapoursynth/plugins/vsmlrt")
     model_paths = require_paths(
         roots,
         [
             Path("vsmlrt.py"),
-            Path("vsmlrt_models/models/dpir"),
-            Path("vsmlrt_models/models/rife"),
-            Path("vsmlrt_models/models/RealESRGANv2/animejanaiV2L1.onnx"),
-            Path("vsmlrt_models/models/RealESRGANv2/animejanaiV3-HD-L1.onnx"),
-            Path("vsmlrt_models/models/RealESRGANv2/Ani4Kv2-G6i2-Compact.onnx"),
+            plugin_prefix / "models/dpir",
+            plugin_prefix / "models/rife",
+            plugin_prefix / "models/RealESRGANv2/animejanaiV2L1.onnx",
+            plugin_prefix / "models/RealESRGANv2/animejanaiV3-HD-L1.onnx",
+            plugin_prefix / "models/RealESRGANv2/Ani4Kv2-G6i2-Compact.onnx",
         ],
     )
-    expected_models = model_paths[Path("vsmlrt_models/models/dpir")].parents[0]
+    expected_models = model_paths[plugin_prefix / "models/dpir"].parents[0]
 
     expected_trtexec: Path | None = None
     expected_tensorrt_rtx: Path | None = None
@@ -459,26 +486,26 @@ def main() -> None:
         generic_paths = require_paths(
             roots,
             [
-                Path("vapoursynth/plugins/vsmlrt-generic/manifest.vs"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsncnn.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsov.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsort.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsov/openvino.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsov/tbb12.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsort/onnxruntime.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsort/DirectML.dll"),
+                plugin_prefix / "vsncnn.dll",
+                plugin_prefix / "vsov.dll",
+                plugin_prefix / "vsort.dll",
+                plugin_prefix / "openvino.dll",
+                plugin_prefix / "onnxruntime.dll",
+                plugin_prefix / "DirectML.dll",
+                plugin_prefix / "vsov/openvino.dll",
+                plugin_prefix / "vsov/tbb12.dll",
+                plugin_prefix / "vsort/onnxruntime.dll",
+                plugin_prefix / "vsort/DirectML.dll",
             ],
         )
-        generic_dir = generic_paths[Path("vapoursynth/plugins/vsmlrt-generic/manifest.vs")].parent
-        print(generic_paths[Path("vapoursynth/plugins/vsmlrt-generic/manifest.vs")].read_text(encoding="ascii"))
+        generic_dir = generic_paths[plugin_prefix / "vsncnn.dll"].parent
     else:
         forbid_paths(
             roots,
             [
-                Path("vapoursynth/plugins/vsmlrt-generic/manifest.vs"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsncnn.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsov.dll"),
-                Path("vapoursynth/plugins/vsmlrt-generic/vsort.dll"),
+                plugin_prefix / "vsncnn.dll",
+                plugin_prefix / "vsov.dll",
+                plugin_prefix / "vsort.dll",
             ],
             "CUDA-only install unexpectedly contains generic payload",
         )
@@ -486,11 +513,10 @@ def main() -> None:
 
     if cuda_flavor is not None:
         trt_suffix = "_11" if cuda_flavor == "cu129" else ""
-        cuda_prefix = Path(f"vapoursynth/plugins/vsmlrt-{cuda_flavor}")
+        cuda_prefix = plugin_prefix
         cuda_paths = require_paths(
             roots,
             [
-                cuda_prefix / "manifest.vs",
                 cuda_prefix / "vstrt.dll",
                 cuda_prefix / "vsmlrt-cuda" / f"nvinfer{trt_suffix}.dll",
                 cuda_prefix / "vsmlrt-cuda" / f"nvinfer_plugin{trt_suffix}.dll",
@@ -513,7 +539,7 @@ def main() -> None:
         else:
             forbid_paths(
                 roots,
-                [Path("vapoursynth/plugins/vsmlrt-cu121/vstrt_rtx.dll")],
+                [plugin_prefix / "vstrt_rtx.dll"],
                 "cu121 install unexpectedly contains TensorRT-RTX payload",
             )
 
@@ -528,16 +554,7 @@ def main() -> None:
         if missing_globs:
             raise SystemExit("Missing installed files matching: " + ", ".join(missing_globs))
 
-        other_cuda = "cu129" if cuda_flavor == "cu121" else "cu121"
-        forbid_paths(
-            roots,
-            [Path(f"vapoursynth/plugins/vsmlrt-{other_cuda}/manifest.vs")],
-            "Install unexpectedly contains another CUDA payload",
-        )
-
-        cuda_manifest = cuda_paths[cuda_prefix / "manifest.vs"]
-        print(cuda_manifest.read_text(encoding="ascii"))
-        cuda_dir = cuda_manifest.parent / "vsmlrt-cuda"
+        cuda_dir = cuda_paths[cuda_prefix / "vstrt.dll"].parent / "vsmlrt-cuda"
         expected_trtexec = cuda_dir / "trtexec.exe"
         if cuda_flavor == "cu129":
             expected_tensorrt_rtx = cuda_dir / "tensorrt_rtx.exe"
@@ -545,8 +562,9 @@ def main() -> None:
         forbid_paths(
             roots,
             [
-                Path("vapoursynth/plugins/vsmlrt-cu121/manifest.vs"),
-                Path("vapoursynth/plugins/vsmlrt-cu129/manifest.vs"),
+                plugin_prefix / "vstrt.dll",
+                plugin_prefix / "vstrt_rtx.dll",
+                plugin_prefix / "vsmlrt-cuda",
             ],
             "Generic-only install unexpectedly contains CUDA payload",
         )
@@ -559,11 +577,13 @@ def main() -> None:
         return
 
     if include_generic and generic_dir is not None:
+        if cuda_flavor is None:
+            smoke_autoload_generic()
         smoke_load_generic(generic_dir)
         print(f"Verified generic payload under: {generic_dir}")
 
     if cuda_flavor is not None:
-        cuda_plugin_dir = find_path(roots, Path(f"vapoursynth/plugins/vsmlrt-{cuda_flavor}/manifest.vs"))
+        cuda_plugin_dir = find_path(roots, plugin_prefix / "vstrt.dll")
         assert cuda_plugin_dir is not None
         cuda_plugin_dir = cuda_plugin_dir.parent
         missing_driver = verify_cuda_imports(roots, cuda_plugin_dir, cuda_plugin_dir / "vsmlrt-cuda", cuda_flavor)

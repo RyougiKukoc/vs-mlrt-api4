@@ -53,7 +53,7 @@ class ReleasePayloadBuildHook(BuildHookInterface):
         force_include = build_data.setdefault("force_include", {})
         if self.models_payload:
             models_dir = self._find_models_dir(extract_dir)
-            force_include[str(models_dir)] = "vsmlrt_models/models"
+            force_include[str(models_dir)] = "vapoursynth/plugins/vsmlrt/models"
             return
 
         plugin_dir = extract_dir / "vsmlrt"
@@ -61,7 +61,20 @@ class ReleasePayloadBuildHook(BuildHookInterface):
             raise RuntimeError("Prebuilt payload is missing vsmlrt/.")
         if not self.install_name:
             raise RuntimeError("Payload build hook is missing install_name.")
+        (plugin_dir / "manifest.vs").unlink(missing_ok=True)
+        self._prepare_plugin_dir(plugin_dir)
         force_include[str(plugin_dir)] = f"vapoursynth/plugins/{self.install_name}"
+
+    def _prepare_plugin_dir(self, plugin_dir: Path) -> None:
+        if self.payload_tag != GENERIC_TAG:
+            return
+
+        for support_dir_name in ("vsov", "vsort"):
+            support_dir = plugin_dir / support_dir_name
+            if not support_dir.is_dir():
+                continue
+            for dll in support_dir.glob("*.dll"):
+                shutil.copy2(dll, plugin_dir / dll.name)
 
     def _find_models_dir(self, extract_dir: Path) -> Path:
         candidates = [

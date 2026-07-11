@@ -55,19 +55,33 @@ as `cu121,generic` do not duplicate `vsmlrt.py` or the model files.
 
 | Extra | Native plugins | Runtime payload | Installed plugin directory |
 | --- | --- | --- | --- |
-| `generic` | `vsncnn`, `vsov`, `vsort` | ncnn, OpenVINO, ONNX Runtime, DirectML support DLLs | `site-packages/vapoursynth/plugins/vsmlrt-generic/` |
-| `cu121` | `vstrt` | CUDA 12.1.1, TensorRT 8.6.1.6, cuDNN | `site-packages/vapoursynth/plugins/vsmlrt-cu121/` |
-| `cu129` | `vstrt`, `vstrt_rtx` | CUDA 12.9.1, TensorRT 11.1.0.106, TensorRT-RTX 1.5.0.114, cuDNN | `site-packages/vapoursynth/plugins/vsmlrt-cu129/` |
+| `generic` | `vsncnn`, `vsov`, `vsort` | ncnn, OpenVINO, ONNX Runtime, DirectML support DLLs | `site-packages/vapoursynth/plugins/vsmlrt/` |
+| `cu121` | `vstrt` | CUDA 12.1.1, TensorRT 8.6.1.6, cuDNN | `site-packages/vapoursynth/plugins/vsmlrt/` |
+| `cu129` | `vstrt`, `vstrt_rtx` | CUDA 12.9.1, TensorRT 11.1.0.106, TensorRT-RTX 1.5.0.114, cuDNN | `site-packages/vapoursynth/plugins/vsmlrt/` |
 
-Models install under:
+All selected payloads overlay into the same `vsmlrt` plugin directory, matching
+the upstream integrated release layout:
 
 ```text
-site-packages/vsmlrt_models/models/
+site-packages/vapoursynth/plugins/vsmlrt/
+  models/
+  vsov/
+  vsort/
+  vsmlrt-cuda/
+  vsncnn.dll
+  vsov.dll
+  vsort.dll
+  vstrt.dll
+  vstrt_rtx.dll
 ```
 
-`vsmlrt.py` resolves models from that shared package first, then falls back to
-legacy layouts for compatibility. TensorRT helper executables are resolved from
-the selected CUDA payload directory.
+Only the files for the selected extras are present. `vstrt_rtx.dll` is installed
+only by `cu129`. `vsmlrt.py` resolves models from `vsmlrt/models` first, then
+falls back to legacy layouts for compatibility. TensorRT helper executables are
+resolved from `vsmlrt/vsmlrt-cuda`. The wheel also installs a small DLL
+search-path helper and keeps root-level copies of generic runtime DLLs that are
+directly imported by `vsov.dll` and `vsort.dll`, so VapourSynth R77 autoloading
+works in portable Python environments.
 
 ## Release Asset Layout
 
@@ -98,18 +112,16 @@ For the CUDA dependency matrix, see
 ## Manual Installation
 
 Manual installation is possible but easier to get wrong than pip installation.
-The release zips are rooted at `vsmlrt/`; when manually combining payloads, put
-each payload into its own VapourSynth plugin directory, for example:
+The release zips are rooted at `vsmlrt/`; when manually combining payloads,
+overlay all selected assets into one VapourSynth plugin directory:
 
 ```text
-vapoursynth/plugins/vsmlrt-generic/
-vapoursynth/plugins/vsmlrt-cu121/
-vapoursynth/plugins/vsmlrt-cu129/
+vapoursynth/plugins/vsmlrt/
 ```
 
-For normal users, prefer the pip extras above. They install `manifest.vs`, native
-DLLs, support DLLs, models, and `vsmlrt.py` in the layout expected by the
-wrapper.
+For normal users, prefer the pip extras above. They install native DLLs, support
+DLLs, models, the DLL search-path helper, and `vsmlrt.py` in the layout expected
+by the wrapper.
 
 ## Backend Source Layout
 

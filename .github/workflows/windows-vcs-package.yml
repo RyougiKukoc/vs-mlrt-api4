@@ -325,8 +325,6 @@ jobs:
             Copy-Item tensorrt\bin\trtexec.exe $baseCudaDir
           }
 
-          Set-Content -Path "$basePluginDir\manifest.vs" -Value "[VapourSynth Manifest V1]`nvstrt`n" -NoNewline -Encoding ascii
-
           if (Test-Path vstrt\install_rtx\bin\vstrt_rtx.dll) {
             $rtxPluginDir = "payload-rtx\vsmlrt"
             $rtxCudaDir = "$rtxPluginDir\vsmlrt-cuda"
@@ -334,7 +332,6 @@ jobs:
             Copy-Item vstrt\install_rtx\bin\vstrt_rtx.dll $rtxPluginDir
             Copy-DllsFromPackage "tensorrt-rtx" $rtxCudaDir
             Copy-Item tensorrt-rtx\bin\tensorrt_rtx.exe $rtxCudaDir -ErrorAction SilentlyContinue
-            Set-Content -Path "$rtxPluginDir\manifest.vs" -Value "[VapourSynth Manifest V1]`nvstrt`nvstrt_rtx`n" -NoNewline -Encoding ascii
           }
 
       - name: Inspect payload layout
@@ -346,7 +343,6 @@ jobs:
             $trtSuffix = "_11"
           }
           $required = @(
-            "payload-base\vsmlrt\manifest.vs",
             "payload-base\vsmlrt\vstrt.dll",
             "payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe",
             "payload-cuda\vsmlrt\vsmlrt-cuda\cublas64_12.dll",
@@ -357,7 +353,6 @@ jobs:
             $required += "payload-trt-core\vsmlrt\vsmlrt-cuda\nvinfer_11.dll"
             $required += "payload-trt-plugin\vsmlrt\vsmlrt-cuda\nvinfer_plugin_11.dll"
             $required += "payload-trt-extra\vsmlrt\vsmlrt-cuda\nvonnxparser_11.dll"
-            $required += "payload-rtx\vsmlrt\manifest.vs"
             $required += "payload-rtx\vsmlrt\vstrt_rtx.dll"
             $required += "payload-rtx\vsmlrt\vsmlrt-cuda\tensorrt_rtx_1_5.dll"
           } else {

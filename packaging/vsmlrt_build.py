@@ -64,9 +64,19 @@ class CustomBuildHook(BuildHookInterface):
         if vapoursynth_dir.is_dir():
             force_include[str(vapoursynth_dir)] = "vapoursynth"
         elif plugin_dir.is_dir():
+            (plugin_dir / "manifest.vs").unlink(missing_ok=True)
+            self._prepare_plugin_dir(plugin_dir)
             force_include[str(plugin_dir)] = "vapoursynth/plugins/vsmlrt"
         else:
             raise RuntimeError("Prebuilt payload is missing vsmlrt/ or vapoursynth/.")
+
+    def _prepare_plugin_dir(self, plugin_dir: Path) -> None:
+        for support_dir_name in ("vsov", "vsort"):
+            support_dir = plugin_dir / support_dir_name
+            if not support_dir.is_dir():
+                continue
+            for dll in support_dir.glob("*.dll"):
+                shutil.copy2(dll, plugin_dir / dll.name)
 
     def _resolve_payload_paths(self) -> list[Path]:
         explicit_paths = os.environ.get("VSMLRT_PREBUILT_PATHS") or os.environ.get("VSMLRT_PREBUILT_PATH")

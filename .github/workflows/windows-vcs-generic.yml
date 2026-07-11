@@ -239,17 +239,19 @@ jobs:
           Copy-Item vsort\onnxruntime-gpu\lib\*.dll $ortDir -ErrorAction SilentlyContinue -Force
           Copy-Item vsort\dml\bin\x64-win\DirectML.dll $ortDir -Force
           Remove-Item "$ortDir\onnxruntime_providers_*.dll" -Force -ErrorAction SilentlyContinue
-
-          Set-Content -Path "$payloadDir\manifest.vs" -Value "[VapourSynth Manifest V1]`nvsncnn`nvsov`nvsort`n" -NoNewline -Encoding ascii
+          Copy-Item "$ovDir\*.dll" $payloadDir -Force
+          Copy-Item "$ortDir\*.dll" $payloadDir -Force
 
       - name: Inspect generic payload
         shell: pwsh
         run: |
           $required = @(
-            "payload-generic\vsmlrt\manifest.vs",
             "payload-generic\vsmlrt\vsncnn.dll",
             "payload-generic\vsmlrt\vsov.dll",
             "payload-generic\vsmlrt\vsort.dll",
+            "payload-generic\vsmlrt\openvino.dll",
+            "payload-generic\vsmlrt\onnxruntime.dll",
+            "payload-generic\vsmlrt\DirectML.dll",
             "payload-generic\vsmlrt\vsov\openvino.dll",
             "payload-generic\vsmlrt\vsov\tbb12.dll",
             "payload-generic\vsmlrt\vsort\onnxruntime.dll",
