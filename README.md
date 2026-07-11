@@ -76,9 +76,9 @@ site-packages/vapoursynth/plugins/vsmlrt/
 ```
 
 Only the files for the selected extras are present. `vstrt_rtx.dll` is installed
-only by `cu129`. `vsmlrt.py` resolves models from `vsmlrt/models` first, then
-falls back to legacy layouts for compatibility. TensorRT helper executables are
-resolved from `vsmlrt/vsmlrt-cuda`. The wheel also installs a small DLL
+only by `cu129`. `vsmlrt.py` resolves models from `vsmlrt/models`, and
+TensorRT helper executables are resolved from `vsmlrt/vsmlrt-cuda`. The wheel
+also installs a small DLL
 search-path helper and keeps root-level copies of generic runtime DLLs that are
 directly imported by `vsov.dll` and `vsort.dll`, so VapourSynth R77 autoloading
 works in portable Python environments.

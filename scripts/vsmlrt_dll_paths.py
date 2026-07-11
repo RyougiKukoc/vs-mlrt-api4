@@ -26,11 +26,8 @@ def _configure_vsmlrt_dll_paths() -> None:
     site_dir = Path(__file__).resolve().parent
     plugin_roots = [
         site_dir / "vapoursynth" / "plugins" / "vsmlrt",
-        site_dir / "vapoursynth" / "plugins" / "vsmlrt-generic",
-        site_dir / "vapoursynth" / "plugins" / "vsmlrt-cu121",
-        site_dir / "vapoursynth" / "plugins" / "vsmlrt-cu129",
     ]
-    support_names = ("vsov", "vsort", "vsmlrt-cuda", "vsmlrt-hip")
+    support_names = ("vsov", "vsort", "vsmlrt-cuda")
 
     for plugin_root in plugin_roots:
         _add_dll_directory(plugin_root)
