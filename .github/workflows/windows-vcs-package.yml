@@ -296,10 +296,11 @@ jobs:
           New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir | Out-Null
 
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
-          @(
-            "[VapourSynth Manifest V1]",
-            "vstrt"
-          ) | Set-Content -LiteralPath "$basePluginDir\manifest.vs" -Encoding ascii
+          $manifestPlugins = @("[VapourSynth Manifest V1]", "vstrt")
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            $manifestPlugins += "vstrt_rtx"
+          }
+          $manifestPlugins | Set-Content -LiteralPath "$basePluginDir\manifest.vs" -Encoding ascii
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
           Copy-DllsFromPackage "cudnn" $cudnnPayloadDir -Recursive
 
@@ -371,6 +372,9 @@ jobs:
           }
           $manifest = Get-Content "payload-base\vsmlrt\manifest.vs"
           $expectedManifest = @("[VapourSynth Manifest V1]", "vstrt")
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            $expectedManifest += "vstrt_rtx"
+          }
           if (Compare-Object $expectedManifest $manifest) {
             throw "CUDA manifest.vs does not match the selected plugin set."
           }

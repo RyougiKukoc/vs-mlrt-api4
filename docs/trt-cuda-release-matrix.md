@@ -83,6 +83,8 @@ Important layout details:
 - OpenVINO support files live once at the plugin root. There is no duplicated
   `vsov/` runtime directory.
 - Every release line includes a `manifest.vs` for manual single-line installs.
+  The cu129 manifest lists both `vstrt` and `vstrt_rtx` because its split
+  assets form one required payload set.
   Pip payload wheels discard those per-release copies; the main `vs-mlrt`
   wheel owns one shared manifest and regenerates its entries from the selected
   extras. Thus `generic,cu121` lists `vsncnn`, `vsov`, and `vstrt` without two
