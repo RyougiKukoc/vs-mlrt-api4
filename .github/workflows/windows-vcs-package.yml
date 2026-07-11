@@ -296,6 +296,10 @@ jobs:
           New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir | Out-Null
 
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
+          @(
+            "[VapourSynth Manifest V1]",
+            "vstrt"
+          ) | Set-Content -LiteralPath "$basePluginDir\manifest.vs" -Encoding ascii
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
           Copy-DllsFromPackage "cudnn" $cudnnPayloadDir -Recursive
 
@@ -343,6 +347,7 @@ jobs:
             $trtSuffix = "_11"
           }
           $required = @(
+            "payload-base\vsmlrt\manifest.vs",
             "payload-base\vsmlrt\vstrt.dll",
             "payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe",
             "payload-cuda\vsmlrt\vsmlrt-cuda\cublas64_12.dll",
@@ -363,6 +368,11 @@ jobs:
             if (-not (Test-Path $path)) {
               throw "Missing payload item: $path"
             }
+          }
+          $manifest = Get-Content "payload-base\vsmlrt\manifest.vs"
+          $expectedManifest = @("[VapourSynth Manifest V1]", "vstrt")
+          if (Compare-Object $expectedManifest $manifest) {
+            throw "CUDA manifest.vs does not match the selected plugin set."
           }
           foreach ($glob in @("payload-cuda\vsmlrt\vsmlrt-cuda\nvrtc*.dll", "payload-cudnn\vsmlrt\vsmlrt-cuda\cudnn*.dll")) {
             if (-not (Test-Path $glob)) {

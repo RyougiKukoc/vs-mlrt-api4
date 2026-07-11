@@ -193,16 +193,18 @@ jobs:
         shell: pwsh
         run: |
           $payloadDir = "payload-generic\vsmlrt"
-          $ovDir = "$payloadDir\vsov"
-          New-Item -ItemType Directory -Force $payloadDir, $ovDir | Out-Null
+          New-Item -ItemType Directory -Force $payloadDir | Out-Null
 
           Copy-Item vsncnn\install\bin\vsncnn.dll $payloadDir
           Copy-Item vsov\install\bin\vsov.dll $payloadDir
 
-          Copy-Item vsov\openvino\runtime\3rdparty\tbb\bin\tbb12.dll $ovDir
-          Copy-Item vsov\openvino\runtime\bin\intel64\Release\* $ovDir -Recurse -Force
-
-          Copy-Item "$ovDir\*.dll" $payloadDir -Force
+          Copy-Item vsov\openvino\runtime\3rdparty\tbb\bin\tbb12.dll $payloadDir
+          Copy-Item vsov\openvino\runtime\bin\intel64\Release\* $payloadDir -Recurse -Force
+          @(
+            "[VapourSynth Manifest V1]",
+            "vsncnn",
+            "vsov"
+          ) | Set-Content -LiteralPath "$payloadDir\manifest.vs" -Encoding ascii
 
       - name: Inspect generic payload
         shell: pwsh
@@ -210,9 +212,10 @@ jobs:
           $required = @(
             "payload-generic\vsmlrt\vsncnn.dll",
             "payload-generic\vsmlrt\vsov.dll",
+            "payload-generic\vsmlrt\manifest.vs",
+            "payload-generic\vsmlrt\cache.json",
             "payload-generic\vsmlrt\openvino.dll",
-            "payload-generic\vsmlrt\vsov\openvino.dll",
-            "payload-generic\vsmlrt\vsov\tbb12.dll"
+            "payload-generic\vsmlrt\tbb12.dll"
           )
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) {
@@ -230,6 +233,14 @@ jobs:
           }
           if (Test-Path "payload-generic\vsmlrt\vsmlrt-cuda") {
             throw "Generic payload must not contain CUDA runtime files."
+          }
+          if (Test-Path "payload-generic\vsmlrt\vsov") {
+            throw "OpenVINO runtime files must be stored once at the plugin root, not duplicated under vsov/."
+          }
+          $manifest = Get-Content "payload-generic\vsmlrt\manifest.vs"
+          $expectedManifest = @("[VapourSynth Manifest V1]", "vsncnn", "vsov")
+          if (Compare-Object $expectedManifest $manifest) {
+            throw "Generic manifest.vs does not list exactly vsncnn and vsov."
           }
           foreach ($path in @(
             "payload-generic\vsmlrt\vsort.dll",

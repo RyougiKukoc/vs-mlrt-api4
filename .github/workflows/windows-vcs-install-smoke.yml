@@ -9,6 +9,7 @@ on:
       - pyproject.toml
       - packaging/**
       - scripts/vsmlrt.py
+      - scripts/vsmlrt_dll_paths.py
       - tools/smoke_vcs_extras_install.py
       - .github/workflows/windows-vcs-install-smoke.yml
   workflow_dispatch:

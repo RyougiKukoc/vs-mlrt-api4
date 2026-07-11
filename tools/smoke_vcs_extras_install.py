@@ -160,6 +160,31 @@ def forbid_paths(roots: list[Path], paths: list[Path], reason: str) -> None:
         raise SystemExit(f"{reason}: " + ", ".join(present))
 
 
+def verify_manifest(
+    roots: list[Path],
+    plugin_prefix: Path,
+    extras: set[str],
+    cuda_flavor: str | None,
+) -> None:
+    manifest = find_path(roots, plugin_prefix / "manifest.vs")
+    if manifest is None:
+        raise SystemExit("Installed payload is missing manifest.vs")
+
+    expected = []
+    if "generic" in extras:
+        expected.extend(("vsncnn", "vsov"))
+    if cuda_flavor is not None:
+        expected.append("vstrt")
+        if cuda_flavor == "cu129":
+            expected.append("vstrt_rtx")
+
+    lines = manifest.read_text(encoding="ascii").splitlines()
+    expected_lines = ["[VapourSynth Manifest V1]", *expected]
+    if lines != expected_lines:
+        raise SystemExit(f"manifest.vs entries {lines!r} != {expected_lines!r}")
+    print("manifest.vs:", ", ".join(expected) or "no native plugins")
+
+
 def parse_extras(raw: str) -> tuple[set[str], str | None]:
     extras = {item.strip() for item in raw.split(",") if item.strip()}
     allowed = {"generic", "cu121", "cu129"}
@@ -508,9 +533,9 @@ def main() -> None:
             [
                 plugin_prefix / "vsncnn.dll",
                 plugin_prefix / "vsov.dll",
+                plugin_prefix / "cache.json",
                 plugin_prefix / "openvino.dll",
-                plugin_prefix / "vsov/openvino.dll",
-                plugin_prefix / "vsov/tbb12.dll",
+                plugin_prefix / "tbb12.dll",
             ],
         )
         generic_dir = generic_paths[plugin_prefix / "vsncnn.dll"].parent
@@ -521,8 +546,9 @@ def main() -> None:
                 plugin_prefix / "vsort",
                 plugin_prefix / "onnxruntime.dll",
                 plugin_prefix / "DirectML.dll",
+                plugin_prefix / "vsov",
             ],
-            "Generic install unexpectedly contains ORT/DirectML payload",
+            "Generic install contains an excluded backend or duplicated OpenVINO directory",
         )
     else:
         forbid_paths(
@@ -596,6 +622,7 @@ def main() -> None:
 
     vsmlrt = import_vsmlrt()
     check_vsmlrt_paths(vsmlrt, expected_models, expected_trtexec, expected_tensorrt_rtx)
+    verify_manifest(roots, plugin_prefix, extras, cuda_flavor)
 
     if args.layout_only:
         print(f"Verified layout for extras: {args.extras}")

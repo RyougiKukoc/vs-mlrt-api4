@@ -80,8 +80,13 @@ Important layout details:
   `cu129`.
 - `generic` contains no CUDA, TensorRT, ORT, or DirectML payload. It contains
   only `vsncnn`, `vsov`, and their support DLLs.
-- OpenVINO support DLLs are kept in `vsov/` and also copied to the plugin root
-  for VapourSynth R77 autoload compatibility.
+- OpenVINO support files live once at the plugin root. There is no duplicated
+  `vsov/` runtime directory.
+- Every release line includes a `manifest.vs` for manual single-line installs.
+  Pip payload wheels discard those per-release copies; the main `vs-mlrt`
+  wheel owns one shared manifest and regenerates its entries from the selected
+  extras. Thus `generic,cu121` lists `vsncnn`, `vsov`, and `vstrt` without two
+  wheels overwriting the same file.
 
 The `cu129` TensorRT payload is split because GitHub Release assets must stay
 below 2 GiB.

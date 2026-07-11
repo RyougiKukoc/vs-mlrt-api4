@@ -44,6 +44,11 @@ out = vsmlrt.DPIR(clip, strength=5.0, backend=vsmlrt.Backend.TRT(fp16=True))
 If pip hides build-backend output while large assets download, add `-v` to the
 install command.
 
+To update an existing VCS installation, rerun the same command with `-U`. The
+`3.23.2.post1` packaging revision upgrades the generic payload selector, so pip
+uninstalls the old duplicated `vsov/` layout before installing the flat layout.
+The wrapper still reports upstream API version `3.23.2`.
+
 On non-Windows platforms this VCS package does not install native prebuilt
 payloads. Use upstream packages or build the required backend from source.
 
@@ -87,9 +92,12 @@ the upstream integrated release layout:
 
 ```text
 site-packages/vapoursynth/plugins/vsmlrt/
+  manifest.vs
   models/
-  vsov/
   vsmlrt-cuda/
+  cache.json
+  openvino.dll
+  tbb12.dll
   vsncnn.dll
   vsov.dll
   vstrt.dll
@@ -99,8 +107,14 @@ site-packages/vapoursynth/plugins/vsmlrt/
 Only the files for the selected extras are present. `vstrt_rtx.dll` is installed
 only by `cu129`. `vsmlrt.py` resolves models from `vsmlrt/models`, and
 TensorRT helper executables are resolved from `vsmlrt/vsmlrt-cuda`. The wheel
-also installs a small DLL search-path helper. OpenVINO runtime DLLs are also
-copied to the plugin root for VapourSynth R77 autoload compatibility.
+also installs a small DLL search-path helper. OpenVINO runtime files live only
+at the plugin root; the package does not ship a second copy under `vsov/`.
+
+`manifest.vs` prevents VapourSynth from trying to load support DLLs as plugins.
+The main `vs-mlrt` package owns this shared file and refreshes it from the
+native plugin DLLs actually installed. For example, `generic,cu121` produces a
+manifest containing `vsncnn`, `vsov`, and `vstrt`, independent of pip's payload
+installation order.
 
 ## Backend Scope
 
@@ -175,6 +189,11 @@ overlay all selected assets into one VapourSynth plugin directory:
 ```text
 vapoursynth/plugins/vsmlrt/
 ```
+
+Each individual release line includes its own `manifest.vs`. When manually
+overlaying `generic` with a CUDA release, merge the plugin names in the
+manifest as well. Pip extras do this automatically and are the supported
+combination path.
 
 For normal users, prefer the pip extras above. They install native DLLs, support
 DLLs, models, the DLL search-path helper, and `vsmlrt.py` in the layout expected

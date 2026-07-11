@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import filecmp
 import os
 import platform
 import re
@@ -29,6 +30,11 @@ class CustomBuildHook(BuildHookInterface):
     def initialize(self, version: str, build_data: dict) -> None:
         if self.target_name != "wheel":
             return
+
+        force_include = build_data.setdefault("force_include", {})
+        force_include[str(Path(self.root) / "packaging" / "manifest.vs")] = (
+            "vapoursynth/plugins/vsmlrt/manifest.vs"
+        )
 
         if os.environ.get("VSMLRT_SKIP_PREBUILT") == "1":
             return
@@ -60,22 +66,33 @@ class CustomBuildHook(BuildHookInterface):
         vapoursynth_dir = extract_dir / "vapoursynth"
         plugin_dir = extract_dir / "vsmlrt"
 
-        force_include = build_data.setdefault("force_include", {})
         if vapoursynth_dir.is_dir():
             force_include[str(vapoursynth_dir)] = "vapoursynth"
         elif plugin_dir.is_dir():
             (plugin_dir / "manifest.vs").unlink(missing_ok=True)
-            self._prepare_plugin_dir(plugin_dir)
+            self._flatten_openvino_runtime(plugin_dir)
             force_include[str(plugin_dir)] = "vapoursynth/plugins/vsmlrt"
         else:
             raise RuntimeError("Prebuilt payload is missing vsmlrt/ or vapoursynth/.")
 
-    def _prepare_plugin_dir(self, plugin_dir: Path) -> None:
+    def _flatten_openvino_runtime(self, plugin_dir: Path) -> None:
         support_dir = plugin_dir / "vsov"
         if not support_dir.is_dir():
             return
-        for dll in support_dir.glob("*.dll"):
-            shutil.copy2(dll, plugin_dir / dll.name)
+
+        for source in support_dir.rglob("*"):
+            if not source.is_file():
+                continue
+            destination = plugin_dir / source.name
+            if destination.exists():
+                if not filecmp.cmp(source, destination, shallow=False):
+                    raise RuntimeError(
+                        f"Conflicting OpenVINO runtime files: {source} and {destination}."
+                    )
+                source.unlink()
+            else:
+                shutil.move(str(source), destination)
+        shutil.rmtree(support_dir)
 
     def _resolve_payload_paths(self) -> list[Path]:
         explicit_paths = os.environ.get("VSMLRT_PREBUILT_PATHS") or os.environ.get("VSMLRT_PREBUILT_PATH")

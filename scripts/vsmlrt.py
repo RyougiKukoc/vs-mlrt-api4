@@ -32,11 +32,11 @@ import typing
 import warnings
 import zlib
 
-import vapoursynth as vs
 try:
     import vsmlrt_dll_paths  # noqa: F401
 except Exception:
     pass
+import vapoursynth as vs
 from vapoursynth import core
 
 

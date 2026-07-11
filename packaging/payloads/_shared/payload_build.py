@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import filecmp
 import os
 import platform
 import re
@@ -72,8 +73,20 @@ class ReleasePayloadBuildHook(BuildHookInterface):
         support_dir = plugin_dir / "vsov"
         if not support_dir.is_dir():
             return
-        for dll in support_dir.glob("*.dll"):
-            shutil.copy2(dll, plugin_dir / dll.name)
+
+        for source in support_dir.rglob("*"):
+            if not source.is_file():
+                continue
+            destination = plugin_dir / source.name
+            if destination.exists():
+                if not filecmp.cmp(source, destination, shallow=False):
+                    raise RuntimeError(
+                        f"Conflicting OpenVINO runtime files: {source} and {destination}."
+                    )
+                source.unlink()
+            else:
+                shutil.move(str(source), destination)
+        shutil.rmtree(support_dir)
 
     def _find_models_dir(self, extract_dir: Path) -> Path:
         candidates = [

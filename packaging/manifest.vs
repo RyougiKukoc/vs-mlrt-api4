@@ -1,0 +1,1 @@
+[VapourSynth Manifest V1]
