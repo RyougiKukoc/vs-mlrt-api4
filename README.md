@@ -47,33 +47,6 @@ install command.
 On non-Windows platforms this VCS package does not install native prebuilt
 payloads. Use upstream packages or build the required backend from source.
 
-## Update And Uninstall
-
-For a reliable in-place refresh, reinstall the same extras with
-`--force-reinstall` and `--no-cache-dir`:
-
-```powershell
-pip install -U --force-reinstall --no-cache-dir "vs-mlrt[cu121,generic] @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git"
-```
-
-Use the same extra set that you want to keep installed. When switching between
-`cu121` and `cu129`, uninstall first so the old CUDA payload does not remain in
-the shared `vsmlrt` plugin directory.
-
-`pip uninstall vs-mlrt` only removes the wrapper package; pip does not
-recursively uninstall packages that were pulled in by extras. To remove the
-wrapper, models, and all known payload wheels, run:
-
-```powershell
-python -m vsmlrt_uninstall
-```
-
-If the wrapper package has already been removed, use pip directly:
-
-```powershell
-pip uninstall -y vs-mlrt vs-mlrt-models vs-mlrt-payload-generic vs-mlrt-payload-cu121 vs-mlrt-payload-cu129
-```
-
 ## Payload Extras
 
 All extras install the shared model payload once through the `vs-mlrt-models`
