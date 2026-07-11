@@ -40,6 +40,7 @@ cu129 = [
 only-include = [
     "scripts/vsmlrt.py",
     "scripts/vsmlrt_dll_paths.py",
+    "scripts/vsmlrt_uninstall.py",
     "scripts/vs_mlrt_dll_paths.pth",
 ]
 
