@@ -12,6 +12,59 @@ from pathlib import Path
 
 _VS_POLICY = None
 
+SUBPROCESS_POLICY_SNIPPET = r"""
+import atexit
+
+_policy = None
+
+class IsolatedEnvironmentPolicy:
+    def __init__(self, flags):
+        self._flags = flags
+        self._api = None
+        self._environment = None
+
+    def on_policy_registered(self, api):
+        self._api = api
+        self._environment = api.create_environment(self._flags)
+
+    def on_policy_cleared(self):
+        if self._api is not None and self._environment is not None:
+            environment = self._environment
+            self._environment = None
+            self._api.destroy_environment(environment)
+        self._api = None
+
+    def get_current_environment(self):
+        return self._environment
+
+    def set_environment(self, environment):
+        previous = self._environment
+        if environment is not None:
+            self._environment = environment
+        return previous
+
+    def is_alive(self, environment):
+        return environment is self._environment
+
+    def close(self):
+        if self._api is not None and self._environment is not None:
+            environment = self._environment
+            self._environment = None
+            self._api.destroy_environment(environment)
+
+def _close_policy():
+    global _policy
+    if _policy is not None:
+        _policy.close()
+        _policy = None
+
+atexit.register(_close_policy)
+
+if not vs.has_policy():
+    _policy = IsolatedEnvironmentPolicy(vs.DISABLE_AUTO_LOADING)
+    vs.register_policy(_policy)
+"""
+
 
 class IsolatedEnvironmentPolicy:
     def __init__(self, flags: int) -> None:
@@ -165,6 +218,7 @@ def smoke_load_generic(plugin_dir: Path) -> None:
 import os
 from pathlib import Path
 import vapoursynth as vs
+{SUBPROCESS_POLICY_SNIPPET}
 
 plugin_dir = Path({str(plugin_dir)!r})
 os.add_dll_directory(str(plugin_dir))
@@ -318,6 +372,7 @@ def smoke_load_cuda(plugin_dir: Path, flavor: str, missing_driver: list[str]) ->
     load_script = f"""
 from pathlib import Path
 import vapoursynth as vs
+{SUBPROCESS_POLICY_SNIPPET}
 
 core = vs.core
 
