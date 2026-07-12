@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vs-mlrt"
-version = "3.23.2.post2"
+version = "3.23.2.post3"
 description = "VapourSynth ML runtime tools with release-backed Windows payloads"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,20 +21,6 @@ dependencies = [
 [project.urls]
 "Source Code" = "https://github.com/RyougiKukoc/vs-mlrt-api4"
 "Bug Tracker" = "https://github.com/RyougiKukoc/vs-mlrt-api4/issues"
-
-[project.optional-dependencies]
-generic = [
-    "vs-mlrt-models @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/models",
-    "vs-mlrt-payload-generic @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/generic",
-]
-cu121 = [
-    "vs-mlrt-models @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/models",
-    "vs-mlrt-payload-cu121 @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/cu121",
-]
-cu129 = [
-    "vs-mlrt-models @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/models",
-    "vs-mlrt-payload-cu129 @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git#subdirectory=packaging/payloads/cu129",
-]
 
 [tool.hatch.build.targets.wheel]
 only-include = [

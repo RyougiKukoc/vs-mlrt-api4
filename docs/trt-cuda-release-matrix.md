@@ -1,30 +1,31 @@
 # TensorRT CUDA Release Matrix
 
 This document describes the Windows TensorRT payloads published by this fork
-and the rules for keeping those payloads in sync with the default-branch VCS
+and the rules for keeping those payloads in sync with the tag-selected VCS
 installer.
 
 The short version:
 
-- Users install from the default branch and select payloads with pip extras.
+- Users install from one of three VCS tags: `generic`, `cu121`, or `cu129`.
 - Release tags such as `cu121`, `cu129`, `generic`, and `models` are binary
   asset slots consumed by the build hooks.
 - `cu121` and `cu129` must not be installed together in one Python
   environment.
-- `generic` is NVIDIA-free and may be combined with either CUDA extra.
+- `cu121` and `cu129` automatically install the `generic` native payload in
+  addition to their TRT-side assets.
 
 ## User-Facing Matrix
 
-| Extra | Native plugins | CUDA / GPU line | Main dependency versions | Intended users |
+| Tag | Native plugins | CUDA / GPU line | Main dependency versions | Intended users |
 | --- | --- | --- | --- | --- |
 | `generic` | `vsncnn`, `vsov` | No NVIDIA CUDA payload | ncnn/Vulkan and OpenVINO runtime DLLs | Intel, AMD, or NVIDIA users who want non-TensorRT backends. |
-| `cu121` | `vstrt` | CUDA 12.1.1 redist | TensorRT 8.6.1.6, cuDNN 8.9.7 | NVIDIA systems pinned to drivers that can run CUDA 12.1/12.2-era user-mode libraries. |
-| `cu129` | `vstrt`, `vstrt_rtx` | CUDA 12.9.1 redist | TensorRT 11.1.0.106, TensorRT-RTX 1.5.0.114, cuDNN 9.19 | Current NVIDIA systems with drivers new enough for CUDA 12.9 user-mode libraries. |
+| `cu121` | `vsncnn`, `vsov`, `vstrt` | CUDA 12.1.1 redist | TensorRT 8.6.1.6, cuDNN 8.9.7 | NVIDIA systems pinned to drivers that can run CUDA 12.1/12.2-era user-mode libraries. |
+| `cu129` | `vsncnn`, `vsov`, `vstrt`, `vstrt_rtx` | CUDA 12.9.1 redist | TensorRT 11.1.0.106, TensorRT-RTX 1.5.0.114, cuDNN 9.19 | Current NVIDIA systems with drivers new enough for CUDA 12.9 user-mode libraries. |
 
 `cu121` does not include `vstrt_rtx`. NVIDIA did not publish a matching
 Windows TensorRT-RTX package for the CUDA 12.1/TensorRT 8.6 line.
 
-The selected extra changes only the installed native payload. The Python entry
+The selected tag changes only the installed native payload. The Python entry
 point remains stable:
 
 ```python
@@ -35,23 +36,22 @@ out = vsmlrt.DPIR(clip, strength=5.0, backend=vsmlrt.Backend.TRT(fp16=True))
 
 ## Install Mapping
 
-Normal installs target this repository's default branch:
+Normal installs target one of this repository's VCS tags:
 
 ```powershell
-pip install "vs-mlrt[generic] @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git"
-pip install "vs-mlrt[cu121] @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git"
-pip install "vs-mlrt[cu129] @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git"
-pip install "vs-mlrt[cu121,generic] @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git"
-pip install "vs-mlrt[cu129,generic] @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git"
+pip install "vs-mlrt @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git@generic"
+pip install "vs-mlrt @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git@cu121"
+pip install "vs-mlrt @ git+https://github.com/RyougiKukoc/vs-mlrt-api4.git@cu129"
 ```
 
-Do not document direct CUDA release-tag checkouts as the primary install path.
-The CUDA tag names are Release tags for prebuilt assets. The default branch
-contains the selector packages and dependency graph that make combinations such
-as `cu121,generic` work without duplicating `vsmlrt.py` or `models/`.
+`@generic` installs the generic payload plus models. `@cu121` and `@cu129`
+install models, download the matching TRT-side release assets, and also pull
+the `generic` release asset so the installed plugin directory always includes
+`vsncnn` and `vsov`.
 
-Each CUDA or generic extra depends on `vs-mlrt-models`, so the shared model
-payload is installed once even when multiple extras are selected.
+Keep the `generic`, `cu121`, and `cu129` tags on distinct commits. The build
+hook resolves the active payload line from the exact tag(s) pointing at `HEAD`,
+and ambiguous multi-tag commits are treated as an error.
 
 ## Release Asset Slots
 
@@ -73,7 +73,7 @@ site-packages/vapoursynth/plugins/vsmlrt/
 
 Important layout details:
 
-- `models.zip` supplies `models/` and is shared by all extras.
+- `models.zip` supplies `models/` and is shared by all three install tags.
 - CUDA payloads place CUDA, cuDNN, TensorRT, and helper executables under
   `vsmlrt/vsmlrt-cuda/`.
 - `vstrt.dll` lives at the plugin root. `vstrt_rtx.dll` is installed only by
@@ -83,12 +83,11 @@ Important layout details:
 - OpenVINO support files live once at the plugin root. There is no duplicated
   `vsov/` runtime directory.
 - Every release line includes a `manifest.vs` for manual single-line installs.
-  The cu129 manifest lists both `vstrt` and `vstrt_rtx` because its split
-  assets form one required payload set.
-  Pip payload wheels discard those per-release copies; the main `vs-mlrt`
-  wheel owns one shared manifest and regenerates its entries from the selected
-  extras. Thus `generic,cu121` lists `vsncnn`, `vsov`, and `vstrt` without two
-  wheels overwriting the same file.
+  The `generic` manifest lists `vsncnn` and `vsov`. The `cu121` manifest lists
+  `vstrt`. The `cu129` manifest lists `vstrt` and `vstrt_rtx`.
+  The root `vs-mlrt` wheel regenerates one shared manifest after overlaying the
+  downloaded assets, so `@cu121` ends up with `vsncnn`, `vsov`, and `vstrt`,
+  while `@cu129` adds `vstrt_rtx`.
 
 The `cu129` TensorRT payload is split because GitHub Release assets must stay
 below 2 GiB.
@@ -102,7 +101,7 @@ Windows release assets are produced by these workflows:
 | `.github/workflows/windows-vcs-models.yml` | Build and publish the shared `models` asset. |
 | `.github/workflows/windows-vcs-generic.yml` | Build and publish the NVIDIA-free `generic` asset. |
 | `.github/workflows/windows-vcs-package.yml` | Build and publish the `cu121` and `cu129` TensorRT assets. |
-| `.github/workflows/windows-vcs-install-smoke.yml` | Install from the default branch with all supported extra combinations and verify the installed layout. |
+| `.github/workflows/windows-vcs-install-smoke.yml` | Install from the `generic`, `cu121`, and `cu129` VCS tags and verify the installed layout. |
 
 Recommended maintainer loop:
 
@@ -124,7 +123,7 @@ packaging errors.
 
 A green hosted CUDA smoke verifies:
 
-- the VCS extras dependency graph;
+- the tag-selected VCS build hook;
 - release asset download and overlay order;
 - plugin directory layout;
 - bundled CUDA/cuDNN/TensorRT DLL coverage;

@@ -1,4 +1,4 @@
-name: Smoke VCS extras install
+name: Smoke VCS tag install
 
 on:
   push:
@@ -24,19 +24,13 @@ jobs:
       matrix:
         include:
           - name: generic
-            extras: generic
+            variant: generic
             needs_vulkan: true
           - name: cu121
-            extras: cu121
-            needs_vulkan: false
-          - name: cu129
-            extras: cu129
-            needs_vulkan: false
-          - name: cu121 plus generic
-            extras: cu121,generic
+            variant: cu121
             needs_vulkan: true
-          - name: cu129 plus generic
-            extras: cu129,generic
+          - name: cu129
+            variant: cu129
             needs_vulkan: true
     runs-on: windows-2022
 
@@ -58,13 +52,13 @@ jobs:
           $installer.WaitForExit()
           "C:\VulkanSDK\1.4.321.1\Bin" | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
 
-      - name: Install package from default branch extras
+      - name: Install package from matching VCS tag
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           python -m pip install --no-cache-dir pefile
-          python -m pip install --no-cache-dir "vs-mlrt[${{ matrix.extras }}] @ git+https://github.com/${{ github.repository }}.git"
+          python -m pip install --no-cache-dir "vs-mlrt @ git+https://github.com/${{ github.repository }}.git@${{ matrix.variant }}"
 
       - name: Verify installed layout
         shell: pwsh
-        run: python tools/smoke_vcs_extras_install.py --extras "${{ matrix.extras }}"
+        run: python tools/smoke_vcs_extras_install.py --variant "${{ matrix.variant }}"

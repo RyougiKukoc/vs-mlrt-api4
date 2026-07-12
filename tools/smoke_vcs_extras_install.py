@@ -163,39 +163,30 @@ def forbid_paths(roots: list[Path], paths: list[Path], reason: str) -> None:
 def verify_manifest(
     roots: list[Path],
     plugin_prefix: Path,
-    extras: set[str],
-    cuda_flavor: str | None,
+    variant: str,
 ) -> None:
     manifest = find_path(roots, plugin_prefix / "manifest.vs")
     if manifest is None:
         raise SystemExit("Installed payload is missing manifest.vs")
 
-    expected = []
-    if "generic" in extras:
-        expected.extend(("vsncnn", "vsov"))
-    if cuda_flavor is not None:
+    expected = ["vsncnn", "vsov"]
+    if variant != "generic":
         expected.append("vstrt")
-        if cuda_flavor == "cu129":
+        if variant == "cu129":
             expected.append("vstrt_rtx")
 
     lines = manifest.read_text(encoding="ascii").splitlines()
     expected_lines = ["[VapourSynth Manifest V1]", *expected]
     if lines != expected_lines:
         raise SystemExit(f"manifest.vs entries {lines!r} != {expected_lines!r}")
-    print("manifest.vs:", ", ".join(expected) or "no native plugins")
+    print("manifest.vs:", ", ".join(expected))
 
 
-def parse_extras(raw: str) -> tuple[set[str], str | None]:
-    extras = {item.strip() for item in raw.split(",") if item.strip()}
-    allowed = {"generic", "cu121", "cu129"}
-    unknown = extras - allowed
-    if unknown:
-        raise SystemExit("Unknown extras: " + ", ".join(sorted(unknown)))
-
-    cuda = sorted(extras & {"cu121", "cu129"})
-    if len(cuda) > 1:
-        raise SystemExit("Do not install cu121 and cu129 in one environment.")
-    return extras, cuda[0] if cuda else None
+def parse_variant(raw: str) -> str:
+    variant = raw.strip()
+    if variant not in {"generic", "cu121", "cu129"}:
+        raise SystemExit(f"Unknown install variant: {variant!r}")
+    return variant
 
 
 def import_vsmlrt() -> object:
@@ -500,12 +491,12 @@ if {flavor == "cu129"!r}:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--extras", required=True, help="Comma-separated extras, e.g. generic or cu121,generic.")
+    parser.add_argument("--variant", required=True, help="Tag-selected VCS install variant: generic, cu121, or cu129.")
     parser.add_argument("--layout-only", action="store_true", help="Only verify installed files and wrapper paths.")
     args = parser.parse_args()
 
-    extras, cuda_flavor = parse_extras(args.extras)
-    include_generic = "generic" in extras
+    variant = parse_variant(args.variant)
+    cuda_flavor = None if variant == "generic" else variant
     roots = site_roots()
     for root in reversed(roots):
         sys.path.insert(0, str(root))
@@ -527,40 +518,28 @@ def main() -> None:
     expected_trtexec: Path | None = None
     expected_tensorrt_rtx: Path | None = None
 
-    if include_generic:
-        generic_paths = require_paths(
-            roots,
-            [
-                plugin_prefix / "vsncnn.dll",
-                plugin_prefix / "vsov.dll",
-                plugin_prefix / "cache.json",
-                plugin_prefix / "openvino.dll",
-                plugin_prefix / "tbb12.dll",
-            ],
-        )
-        generic_dir = generic_paths[plugin_prefix / "vsncnn.dll"].parent
-        forbid_paths(
-            roots,
-            [
-                plugin_prefix / "vsort.dll",
-                plugin_prefix / "vsort",
-                plugin_prefix / "onnxruntime.dll",
-                plugin_prefix / "DirectML.dll",
-                plugin_prefix / "vsov",
-            ],
-            "Generic install contains an excluded backend or duplicated OpenVINO directory",
-        )
-    else:
-        forbid_paths(
-            roots,
-            [
-                plugin_prefix / "vsncnn.dll",
-                plugin_prefix / "vsov.dll",
-                plugin_prefix / "vsort.dll",
-            ],
-            "CUDA-only install unexpectedly contains generic payload",
-        )
-        generic_dir = None
+    generic_paths = require_paths(
+        roots,
+        [
+            plugin_prefix / "vsncnn.dll",
+            plugin_prefix / "vsov.dll",
+            plugin_prefix / "cache.json",
+            plugin_prefix / "openvino.dll",
+            plugin_prefix / "tbb12.dll",
+        ],
+    )
+    generic_dir = generic_paths[plugin_prefix / "vsncnn.dll"].parent
+    forbid_paths(
+        roots,
+        [
+            plugin_prefix / "vsort.dll",
+            plugin_prefix / "vsort",
+            plugin_prefix / "onnxruntime.dll",
+            plugin_prefix / "DirectML.dll",
+            plugin_prefix / "vsov",
+        ],
+        "Install contains an excluded backend or duplicated OpenVINO directory",
+    )
 
     if cuda_flavor is not None:
         trt_suffix = "_11" if cuda_flavor == "cu129" else ""
@@ -622,13 +601,13 @@ def main() -> None:
 
     vsmlrt = import_vsmlrt()
     check_vsmlrt_paths(vsmlrt, expected_models, expected_trtexec, expected_tensorrt_rtx)
-    verify_manifest(roots, plugin_prefix, extras, cuda_flavor)
+    verify_manifest(roots, plugin_prefix, variant)
 
     if args.layout_only:
-        print(f"Verified layout for extras: {args.extras}")
+        print(f"Verified layout for variant: {args.variant}")
         return
 
-    if include_generic and generic_dir is not None:
+    if generic_dir is not None:
         verify_generic_imports(generic_dir)
         if cuda_flavor is None:
             smoke_autoload_generic()

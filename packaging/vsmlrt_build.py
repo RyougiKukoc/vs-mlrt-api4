@@ -22,6 +22,8 @@ DEFAULT_MODELS_TAG = "models"
 MODELS_ASSET = "models.zip"
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 DOWNLOAD_PROGRESS_INTERVAL = 5.0
+MANIFEST_HEADER = "[VapourSynth Manifest V1]"
+PLUGIN_BASENAMES = ("vsncnn", "vsov", "vsort", "vstrt", "vstrt_rtx", "vsmigx")
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -32,9 +34,11 @@ class CustomBuildHook(BuildHookInterface):
             return
 
         force_include = build_data.setdefault("force_include", {})
-        force_include[str(Path(self.root) / "packaging" / "manifest.vs")] = (
-            "vapoursynth/plugins/vsmlrt/manifest.vs"
-        )
+        payload_requested = self._payload_requested()
+        if not payload_requested:
+            force_include[str(Path(self.root) / "packaging" / "manifest.vs")] = (
+                "vapoursynth/plugins/vsmlrt/manifest.vs"
+            )
 
         if os.environ.get("VSMLRT_SKIP_PREBUILT") == "1":
             return
@@ -44,10 +48,7 @@ class CustomBuildHook(BuildHookInterface):
             # downloading Windows-only release payloads.
             return
 
-        if not self._legacy_payload_requested():
-            # Main-branch VCS installs use pyproject extras that pull separate
-            # payload wheels. This root hook remains only for old single-tag
-            # installs and explicit maintainer overrides.
+        if not payload_requested:
             return
 
         build_data["tag"] = "py3-none-win_amd64"
@@ -64,16 +65,23 @@ class CustomBuildHook(BuildHookInterface):
                 archive.extractall(extract_dir)
 
         vapoursynth_dir = extract_dir / "vapoursynth"
-        plugin_dir = extract_dir / "vsmlrt"
+        plugin_dir = vapoursynth_dir / "plugins" / "vsmlrt"
+        if not plugin_dir.is_dir():
+            plugin_dir = extract_dir / "vsmlrt"
+
+        if not plugin_dir.is_dir():
+            raise RuntimeError("Prebuilt payload is missing vsmlrt/ or vapoursynth/.")
+
+        self._prepare_plugin_dir(plugin_dir)
 
         if vapoursynth_dir.is_dir():
             force_include[str(vapoursynth_dir)] = "vapoursynth"
-        elif plugin_dir.is_dir():
-            (plugin_dir / "manifest.vs").unlink(missing_ok=True)
-            self._flatten_openvino_runtime(plugin_dir)
-            force_include[str(plugin_dir)] = "vapoursynth/plugins/vsmlrt"
         else:
-            raise RuntimeError("Prebuilt payload is missing vsmlrt/ or vapoursynth/.")
+            force_include[str(plugin_dir)] = "vapoursynth/plugins/vsmlrt"
+
+    def _prepare_plugin_dir(self, plugin_dir: Path) -> None:
+        self._flatten_openvino_runtime(plugin_dir)
+        self._write_manifest(plugin_dir)
 
     def _flatten_openvino_runtime(self, plugin_dir: Path) -> None:
         support_dir = plugin_dir / "vsov"
@@ -93,6 +101,11 @@ class CustomBuildHook(BuildHookInterface):
             else:
                 shutil.move(str(source), destination)
         shutil.rmtree(support_dir)
+
+    def _write_manifest(self, plugin_dir: Path) -> None:
+        plugins = [name for name in PLUGIN_BASENAMES if (plugin_dir / f"{name}.dll").is_file()]
+        contents = "\n".join((MANIFEST_HEADER, *plugins, ""))
+        (plugin_dir / "manifest.vs").write_text(contents, encoding="ascii", newline="\n")
 
     def _resolve_payload_paths(self) -> list[Path]:
         explicit_paths = os.environ.get("VSMLRT_PREBUILT_PATHS") or os.environ.get("VSMLRT_PREBUILT_PATH")
@@ -125,23 +138,23 @@ class CustomBuildHook(BuildHookInterface):
             return self._download_urls(urls)
 
         cuda_tag = payload_tag
-        cuda_assets = [
-            f"vs-mlrt-windows-x64-tensorrt-{cuda_tag}.zip",
-            f"vs-mlrt-windows-x64-cuda-{cuda_tag}.zip",
-            f"vs-mlrt-windows-x64-cudnn-{cuda_tag}.zip",
+        urls = [
+            f"https://github.com/{repo}/releases/download/{GENERIC_TAG}/vs-mlrt-windows-x64-generic.zip",
+            f"https://github.com/{repo}/releases/download/{cuda_tag}/vs-mlrt-windows-x64-tensorrt-{cuda_tag}.zip",
+            f"https://github.com/{repo}/releases/download/{cuda_tag}/vs-mlrt-windows-x64-cuda-{cuda_tag}.zip",
+            f"https://github.com/{repo}/releases/download/{cuda_tag}/vs-mlrt-windows-x64-cudnn-{cuda_tag}.zip",
+            f"https://github.com/{models_repo}/releases/download/{models_tag}/{MODELS_ASSET}",
         ]
         if cuda_tag == "cu129":
-            cuda_assets.extend(
+            urls.extend(
                 [
-                    "vs-mlrt-windows-x64-tensorrt-core-cu129.zip",
-                    "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip",
-                    "vs-mlrt-windows-x64-tensorrt-extra-cu129.zip",
-                    "vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip",
+                    f"https://github.com/{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-core-cu129.zip",
+                    f"https://github.com/{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip",
+                    f"https://github.com/{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-extra-cu129.zip",
+                    f"https://github.com/{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip",
                 ]
             )
 
-        urls = [f"https://github.com/{repo}/releases/download/{cuda_tag}/{asset}" for asset in cuda_assets]
-        urls.append(f"https://github.com/{models_repo}/releases/download/{models_tag}/{MODELS_ASSET}")
         return self._download_urls(urls)
 
     def _download_urls(self, urls: list[str]) -> list[Path]:
@@ -272,22 +285,18 @@ class CustomBuildHook(BuildHookInterface):
         if ref_name in PAYLOAD_TAGS:
             return ref_name
 
-        try:
-            tag = subprocess.check_output(
-                ["git", "describe", "--tags", "--exact-match"],
-                cwd=self.root,
-                text=True,
-                stderr=subprocess.DEVNULL,
-            ).strip()
-        except Exception:
-            tag = ""
+        tags = self._payload_tags_at_head()
+        if len(tags) == 1:
+            return tags[0]
+        if len(tags) > 1:
+            raise RuntimeError(
+                "Multiple vs-mlrt payload tags point at HEAD "
+                f"({', '.join(tags)}). Keep generic, cu121, and cu129 on distinct commits."
+            )
 
-        if tag in PAYLOAD_TAGS:
-            return tag
+        raise RuntimeError("No vs-mlrt payload tag was selected.")
 
-        raise RuntimeError("No legacy vs-mlrt payload tag was selected.")
-
-    def _legacy_payload_requested(self) -> bool:
+    def _payload_requested(self) -> bool:
         if (
             os.environ.get("VSMLRT_PREBUILT_PATHS")
             or os.environ.get("VSMLRT_PREBUILT_PATH")
@@ -302,17 +311,21 @@ class CustomBuildHook(BuildHookInterface):
         if ref_name in PAYLOAD_TAGS:
             return True
 
+        return bool(self._payload_tags_at_head())
+
+    def _payload_tags_at_head(self) -> list[str]:
         try:
-            tag = subprocess.check_output(
-                ["git", "describe", "--tags", "--exact-match"],
+            output = subprocess.check_output(
+                ["git", "tag", "--points-at", "HEAD"],
                 cwd=self.root,
                 text=True,
                 stderr=subprocess.DEVNULL,
-            ).strip()
+            )
         except Exception:
-            tag = ""
+            return []
 
-        return tag in PAYLOAD_TAGS
+        tags = [line.strip() for line in output.splitlines() if line.strip() in PAYLOAD_TAGS]
+        return sorted(set(tags))
 
     def _detect_github_repo(self) -> str:
         try:
