@@ -54,7 +54,7 @@ jobs:
 
       - name: Checkout repo
         if: steps.select.outputs.should_build == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -109,7 +109,7 @@ jobs:
       - name: Cache CUDA
         if: steps.select.outputs.should_build == 'true'
         id: cache-cuda
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: cuda-redist/${{ matrix.cuda_flavor }}
           key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}-redist-v2

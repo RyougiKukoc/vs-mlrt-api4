@@ -1465,11 +1465,11 @@ def RIFE(
         else:
             if not hasattr(core, 'akarin') or \
                 not hasattr(core.akarin, 'PropExpr') or \
-                not hasattr(core.akarin, 'PickFrames'):
+                not hasattr(core.akarin, 'Select'):
                 raise RuntimeError(
                     'fractional multi requires plugin akarin '
                     '(https://github.com/AkarinVS/vapoursynth-plugin/releases)'
-                    ', version v0.96g or later.')
+                    ', version v0.96e or later.')
 
             left_indices = []
             right_indices = []
@@ -1493,8 +1493,23 @@ def RIFE(
                     tp = (current_time - left_time) / src_duration
                     timepoints.append(tp)
 
-            left_clip = core.akarin.PickFrames(clip, left_indices)
-            right_clip = core.akarin.PickFrames(clip, right_indices)
+            if not timepoints:
+                res = clip.std.SelectEvery(
+                    cycle=max(2, clip.num_frames), offsets=output_indices, modify_duration=False
+                )
+                if clip.fps_num != 0 and clip.fps_den != 0:
+                    return res.std.AssumeFPS(
+                        fpsnum=dst_fps.numerator, fpsden=dst_fps.denominator
+                    )
+                return res
+
+            select_cycle = max(2, clip.num_frames)
+            left_clip = clip.std.SelectEvery(
+                cycle=select_cycle, offsets=left_indices, modify_duration=False
+            )
+            right_clip = clip.std.SelectEvery(
+                cycle=select_cycle, offsets=right_indices, modify_duration=False
+            )
             tp_clip = core.std.BlankClip(clip, format=gray_format, length=len(timepoints))
             tp_clip = tp_clip.akarin.PropExpr(lambda: dict(_tp=timepoints)).akarin.Expr('x._tp')
 
@@ -1508,7 +1523,10 @@ def RIFE(
             clip0 = bits_as(clip, output0)
             left0 = bits_as(left_clip, output0)
             output = core.akarin.Select([output0, left0], left0, 'x._SceneChangeNext 1 0 ?')
-            res = core.akarin.PickFrames(clip0 + output, output_indices)
+            selected = clip0 + output
+            res = selected.std.SelectEvery(
+                cycle=max(2, selected.num_frames), offsets=output_indices, modify_duration=False
+            )
 
         if clip.fps_num != 0 and clip.fps_den != 0:
             return res.std.AssumeFPS(fpsnum = dst_fps.numerator, fpsden = dst_fps.denominator)

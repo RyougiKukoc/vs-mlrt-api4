@@ -46,9 +46,9 @@ If pip hides build-backend output while large assets download, add `-v` to the
 install command.
 
 To update an existing VCS installation, rerun the same command with `-U`. The
-`3.23.2.post3` packaging revision switches the Windows install flow back to
-three tag-selected variants and keeps the flattened OpenVINO runtime layout.
-The wrapper still reports upstream API version `3.23.2`.
+package and wrapper version follow upstream `3.23.2`; the Windows install flow
+continues to use the three tag-selected variants and the flattened OpenVINO
+runtime layout.
 
 On non-Windows platforms this VCS package does not install native prebuilt
 payloads. Use upstream packages or build the required backend from source.
@@ -126,15 +126,15 @@ skill and this fork's patch as the starting point:
 - Skill repository:
   <https://github.com/RyougiKukoc/vapoursynth-api3-to-api4-skill>
 - Upstream comparison base:
-  `AmusementClub/vs-mlrt` tag `v15.16`,
-  commit `885e8bb827fc431fce8e3109e7d60b0c38aa2035`.
+  `AmusementClub/vs-mlrt` tag `v16.2.test1`,
+  commit `9e4d0c9dbbcaa28275772d30520330e69a58307c`.
 
 A useful local comparison command is:
 
 ```powershell
 git remote add upstream https://github.com/AmusementClub/vs-mlrt.git 2>$null
-git fetch upstream tag v15.16
-git diff 885e8bb827fc431fce8e3109e7d60b0c38aa2035..HEAD
+git fetch upstream tag v16.2.test1
+git diff 9e4d0c9dbbcaa28275772d30520330e69a58307c..HEAD
 ```
 
 ## Release Asset Layout

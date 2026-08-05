@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -43,14 +43,14 @@ jobs:
 
       - name: Cache ncnn ONNX
         id: cache-onnx-ncnn
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: vsncnn/onnx/install
           key: ${{ runner.os }}-vsmlrt-generic-onnx-ncnn-v1
 
       - name: Checkout ncnn ONNX
         if: steps.cache-onnx-ncnn.outputs.cache-hit != 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: onnx/onnx
           ref: v1.19.0
@@ -105,14 +105,14 @@ jobs:
 
       - name: Cache OpenVINO protobuf
         id: cache-protobuf-ov
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: vsov/protobuf/install
           key: ${{ runner.os }}-vsmlrt-generic-protobuf-ov-v1
 
       - name: Checkout OpenVINO protobuf
         if: steps.cache-protobuf-ov.outputs.cache-hit != 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: protocolbuffers/protobuf
           ref: f0dc78d7e6e331b8c6bb2d5283e06aa26883ca7c
@@ -132,14 +132,14 @@ jobs:
 
       - name: Cache OpenVINO ONNX
         id: cache-onnx-ov
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: vsov/onnx/install
           key: ${{ runner.os }}-vsmlrt-generic-onnx-ov-v1
 
       - name: Checkout OpenVINO ONNX
         if: steps.cache-onnx-ov.outputs.cache-hit != 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: onnx/onnx
           ref: b8baa8446686496da4cc8fda09f2b6fe65c2a02c
