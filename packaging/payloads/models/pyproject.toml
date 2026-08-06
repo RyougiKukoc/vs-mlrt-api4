@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vs-mlrt-models"
-version = "3.23.2"
+version = "16.2.1"
 description = "Release-backed vs-mlrt shared model payload"
 requires-python = ">=3.12"
 

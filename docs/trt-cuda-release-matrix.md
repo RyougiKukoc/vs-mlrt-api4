@@ -138,9 +138,11 @@ driver/runtime.
 
 ## CUDA-Sensitive Maintenance Points
 
-The wrapper version for this fork follows upstream `3.23.2`. Most C++ code is
-sensitive to TensorRT major/version APIs rather than CUDA
-minor versions. Review these areas when changing TensorRT lines:
+The Python distribution version `16.2.1` identifies the complete plugin release
+aligned with upstream tag `v16.2.test1`. The separate wrapper API version is not
+used as the package version. Most C++ code is sensitive to TensorRT
+major/version APIs rather than CUDA minor versions. Review these areas when
+changing TensorRT lines:
 
 - `vstrt/trt_utils.h`: `NV_TENSORRT_MAJOR`, `NV_TENSORRT_MINOR`,
   `NV_TENSORRT_PATCH`, and `TRT_MAJOR_RTX` select binding, tensor shape,

@@ -46,9 +46,11 @@ If pip hides build-backend output while large assets download, add `-v` to the
 install command.
 
 To update an existing VCS installation, rerun the same command with `-U`. The
-package and wrapper version follow upstream `3.23.2`; the Windows install flow
-continues to use the three tag-selected variants and the flattened OpenVINO
-runtime layout.
+The Python distribution version `16.2.1` identifies the complete plugin release
+aligned with upstream tag `v16.2.test1`. The separate `vsmlrt.__version__` value
+identifies only the Python wrapper API and is not the package version. The
+Windows install flow continues to use the three tag-selected variants and the
+flattened OpenVINO runtime layout.
 
 On non-Windows platforms this VCS package does not install native prebuilt
 payloads. Use upstream packages or build the required backend from source.

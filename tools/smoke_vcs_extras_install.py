@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import importlib.metadata
 import os
 import re
 import site
@@ -11,6 +12,7 @@ from pathlib import Path
 
 
 _VS_POLICY = None
+EXPECTED_DISTRIBUTION_VERSION = "16.2.1"
 
 SUBPROCESS_POLICY_SNIPPET = r"""
 import atexit
@@ -201,6 +203,16 @@ def import_vsmlrt() -> object:
 
     print(f"Imported vsmlrt from {vsmlrt.__file__}")
     return vsmlrt
+
+
+def verify_distribution_version() -> None:
+    installed_version = importlib.metadata.version("vs-mlrt")
+    if installed_version != EXPECTED_DISTRIBUTION_VERSION:
+        raise SystemExit(
+            f"Installed vs-mlrt version {installed_version!r} "
+            f"!= {EXPECTED_DISTRIBUTION_VERSION!r}"
+        )
+    print(f"vs-mlrt distribution version: {installed_version}")
 
 
 def check_vsmlrt_paths(
@@ -599,6 +611,7 @@ def main() -> None:
             "Generic-only install unexpectedly contains CUDA payload",
         )
 
+    verify_distribution_version()
     vsmlrt = import_vsmlrt()
     check_vsmlrt_paths(vsmlrt, expected_models, expected_trtexec, expected_tensorrt_rtx)
     verify_manifest(roots, plugin_prefix, variant)
