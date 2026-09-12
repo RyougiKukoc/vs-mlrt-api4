@@ -3,10 +3,13 @@
 #include <iostream>
 #include <streambuf>
 #include <fstream>
+#include <filesystem>
+#include <stdexcept>
 #include <stdlib.h>
 
 namespace {
 static struct redirect {
+	std::streambuf *original_out = nullptr, *original_err = nullptr;
 	class teebuf: public std::streambuf {
 		public:
 			teebuf(std::streambuf *a, std::streambuf *b): s1(a), s2(b) {}
@@ -32,12 +35,17 @@ static struct redirect {
 	redirect() {
 		const char *fn = getenv("TRTEXEC_LOG_FILE");
 		if (fn) {
-			static std::ofstream ofs(fn, std::ios::app);
+			static std::ofstream ofs(std::filesystem::u8path(fn), std::ios::app);
+			if (!ofs) throw std::runtime_error("Cannot open TRTEXEC_LOG_FILE");
 			static teebuf out(ofs.rdbuf(), std::cout.rdbuf());
 			static teebuf err(ofs.rdbuf(), std::cerr.rdbuf());
-			std::cout.rdbuf(&out);
-			std::cerr.rdbuf(&err);
+			original_out = std::cout.rdbuf(&out);
+			original_err = std::cerr.rdbuf(&err);
 		}
+	}
+	~redirect() {
+		if (original_out) { std::cout.flush(); std::cout.rdbuf(original_out); }
+		if (original_err) { std::cerr.flush(); std::cerr.rdbuf(original_err); }
 	}
 } _;
 } // namespace

@@ -1,6 +1,15 @@
 name: Build Windows VCS TRT package
 
 on:
+  pull_request:
+    paths:
+      - "vstrt/**"
+      - "common/**"
+      - "packaging/**"
+      - "scripts/**"
+      - "tools/**"
+      - "pyproject.toml"
+      - ".github/workflows/windows-vcs-package.yml"
   push:
     tags:
       - cu121
@@ -44,6 +53,7 @@ jobs:
           MATRIX_CUDA_FLAVOR: ${{ matrix.cuda_flavor }}
         run: |
           $shouldBuild = (
+            ($env:EVENT_NAME -eq "pull_request") -or
             ($env:EVENT_NAME -eq "push" -and $env:REF_NAME -eq $env:MATRIX_CUDA_FLAVOR) -or
             ($env:EVENT_NAME -eq "workflow_dispatch" -and (
               $env:INPUT_CUDA_FLAVOR -eq "all" -or
@@ -67,6 +77,7 @@ jobs:
             $envLines = @(
               "CUDA_VERSION=12.1.1",
               "CUDA_MINOR=12.1",
+              "MSVC_TOOLSET=14.38",
               "CUDA_ARCHS=75;86-real;89-real",
               "TENSORRT_VERSION=8.6.1.6",
               "TENSORRT_URL=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/secure/8.6.1/zip/TensorRT-8.6.1.6.Windows10.x86_64.cuda-12.0.zip",
@@ -79,6 +90,7 @@ jobs:
             $envLines = @(
               "CUDA_VERSION=12.9.1",
               "CUDA_MINOR=12.9",
+              "MSVC_TOOLSET=14.44",
               "CUDA_ARCHS=75;86-real;89-real;120-real",
               "TENSORRT_VERSION=11.1.0.106",
               "TENSORRT_URL=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.1.0/zip/TensorRT-Enterprise-11.1.0.106-Windows-amd64-cuda-12.9-Release-external.zip",
@@ -97,9 +109,23 @@ jobs:
             "$($name.ToLowerInvariant())=$value" | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
           }
 
+      - name: Ensure CUDA 12.1 compatible MSVC toolset
+        if: steps.select.outputs.should_build == 'true' && matrix.cuda_flavor == 'cu121'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not (Get-ChildItem "$install\VC\Tools\MSVC\14.38.*" -Directory -ErrorAction SilentlyContinue)) {
+            $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+            $process = Start-Process -FilePath $setup -WindowStyle Hidden -Wait -PassThru -ArgumentList @("modify", "--installPath", "`"$install`"", "--add", "Microsoft.VisualStudio.Component.VC.14.38.17.8.x86.x64", "--quiet", "--norestart", "--nocache")
+            if ($process.ExitCode -notin @(0, 3010)) { throw "MSVC 14.38 installation failed: $($process.ExitCode)" }
+          }
+
       - name: Setup MSVC
         if: steps.select.outputs.should_build == 'true'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          toolset: ${{ env.MSVC_TOOLSET }}
 
       - name: Setup Ninja
         if: steps.select.outputs.should_build == 'true'
@@ -112,7 +138,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: cuda-redist/${{ matrix.cuda_flavor }}
-          key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}-redist-v2
+          key: ${{ runner.os }}-vsmlrt-vcs-${{ matrix.cuda_flavor }}-${{ env.CUDA_VERSION }}-redist-v3-profiler
 
       - name: Setup CUDA
         if: steps.select.outputs.should_build == 'true'
@@ -121,7 +147,7 @@ jobs:
           $cudaPath = Join-Path $pwd "cuda-redist\${{ matrix.cuda_flavor }}"
           $nvcc = Join-Path $cudaPath "bin\nvcc.exe"
 
-          if (-not (Test-Path -LiteralPath $nvcc)) {
+          if (-not (Test-Path -LiteralPath $nvcc) -or -not (Test-Path "$cudaPath\include\cuda_profiler_api.h")) {
             $baseUrl = "https://developer.download.nvidia.com/compute/cuda/redist"
             $manifestPath = "cuda-redistrib.json"
             curl.exe -fL -o $manifestPath "$baseUrl/redistrib_$env:CUDA_VERSION.json"
@@ -133,6 +159,7 @@ jobs:
               "cuda_nvcc",
               "cuda_nvrtc",
               "cuda_nvtx",
+              "cuda_profiler_api",
               "libcublas",
               "libcufft",
               "libnvjitlink"
@@ -147,7 +174,10 @@ jobs:
               $archive = "cuda-downloads\$package.zip"
               $extract = "cuda-downloads\$package"
               curl.exe -fL -o $archive "$baseUrl/$($entry.relative_path)"
+              if ($LASTEXITCODE) { throw "CUDA download failed: $package" }
+              if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256) { throw "CUDA component digest mismatch: $package" }
               7z x -y $archive "-o$extract"
+              if ($LASTEXITCODE) { throw "CUDA extraction failed: $package" }
               $root = Get-ChildItem -Path $extract -Directory | Select-Object -First 1
               Copy-Item -Path "$($root.FullName)\*" -Destination $cudaPath -Recurse -Force
             }
@@ -247,30 +277,18 @@ jobs:
       - name: Build custom trtexec
         if: steps.select.outputs.should_build == 'true'
         id: trtexec
-        continue-on-error: true
         shell: pwsh
         run: |
-          Copy-Item vstrt\trtexec\CMakeLists.txt tensorrt-oss\samples\trtexec\CMakeLists.txt -Force
-          Copy-Item vstrt\trtexec\*.cpp tensorrt-oss\samples\trtexec -Force
-          Copy-Item vstrt\longpath.manifest tensorrt-oss\samples\trtexec -Force
-          Copy-Item vstrt\trtexec\trtexec.patch tensorrt-oss\trtexec.patch -Force
-          Push-Location tensorrt-oss
-          git apply trtexec.patch --verbose
-          Pop-Location
           New-Item -ItemType Directory -Force tensorrt-oss\include\nlohmann | Out-Null
-          curl.exe -L -o tensorrt-oss\include\nlohmann\json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/tags/v3.11.3/single_include/nlohmann/json.hpp
-          $cudaPath = $env:CUDA_PATH
-          $cudaArchitectures = $env:CUDA_ARCHS -replace ';', ';'
-          cmake -S tensorrt-oss\samples\trtexec -B vstrt\build_trtexec -G Ninja `
-            -D CMAKE_BUILD_TYPE=Release `
-            -D CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -D CUDAToolkit_ROOT="$cudaPath" `
-            -D CMAKE_UNITY_BUILD=ON `
-            -D CMAKE_UNITY_BUILD_BATCH_SIZE=0 `
-            -D CMAKE_CXX_STANDARD=20 `
-            -D CMAKE_CUDA_ARCHITECTURES="$cudaArchitectures"
-          cmake --build vstrt\build_trtexec --verbose
-          cmake --install vstrt\build_trtexec --prefix vstrt\trtexec-install
+          curl.exe -fL -o tensorrt-oss\include\nlohmann\json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/tags/v3.11.3/single_include/nlohmann/json.hpp
+          if ($LASTEXITCODE) { throw "nlohmann/json download failed" }
+          python tools/build_custom_trtexec.py --source tensorrt-oss --sdk tensorrt --version "$env:TENSORRT_VERSION" --cuda "$env:CUDA_PATH" --architectures "$env:CUDA_ARCHS"
+
+      - name: Verify custom trtexec logging and file locks
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          python tools/test_custom_trtexec.py --bin-dir vstrt/trtexec-install/bin --runtime-dir tensorrt/bin --runtime-dir tensorrt/lib --runtime-dir "$env:CUDA_PATH\bin"
 
       - name: Assemble payload
         if: steps.select.outputs.should_build == 'true'
@@ -324,11 +342,8 @@ jobs:
           foreach ($runtimePath in @("$cudaPath\bin\*.dll", "$cudaPath\bin\x64\*.dll", "$cudaPath\extras\CUPTI\lib64\*.dll", "$cudaPath\nvvm\bin\*.dll")) {
             Copy-Item $runtimePath $cudaPayloadDir -ErrorAction SilentlyContinue
           }
-          if (Test-Path vstrt\trtexec-install\bin\trtexec.exe) {
-            Copy-Item vstrt\trtexec-install\bin\trtexec.exe $baseCudaDir
-          } else {
-            Copy-Item tensorrt\bin\trtexec.exe $baseCudaDir
-          }
+          Copy-Item vstrt\trtexec-install\bin\trtexec.exe $baseCudaDir
+          Copy-Item vstrt\trtexec-install\bin\trtexec-build.json $baseCudaDir
 
           if (Test-Path vstrt\install_rtx\bin\vstrt_rtx.dll) {
             $rtxPluginDir = "payload-rtx\vsmlrt"
@@ -416,19 +431,57 @@ jobs:
             }
           }
 
+      - name: Set up install verification Python
+        if: steps.select.outputs.should_build == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install verification dependencies
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: python -m pip install "vapoursynth==77" numpy onnx onnxconverter-common pefile
+
+      - name: Install Vulkan runtime for the generic dependency
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe?Human=true" -OutFile VulkanSDK.exe
+          $installer = Start-Process -FilePath VulkanSDK.exe -WindowStyle Hidden -Wait -PassThru -ArgumentList "--accept-licenses --default-answer --confirm-command install"
+          if ($installer.ExitCode -ne 0) { throw "Vulkan SDK installation failed: $($installer.ExitCode)" }
+          "C:\VulkanSDK\1.4.321.1\Bin" | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
+
+      - name: Install and verify this job's exact staged payload
+        if: steps.select.outputs.should_build == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/verify_staged_payload.py --variant "${{ matrix.cuda_flavor }}" --repo "${{ github.repository }}" --evidence "payload-provenance-${{ matrix.cuda_flavor }}.json"
+
       - name: Upload payload artifact
         if: steps.select.outputs.should_build == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}
-          path: vs-mlrt-windows-x64-*.zip
+          path: |
+            vs-mlrt-windows-x64-*.zip
+            payload-provenance-${{ matrix.cuda_flavor }}.json
 
       - name: Release payload
         if: steps.select.outputs.should_build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ matrix.cuda_flavor }}
-          files: vs-mlrt-windows-x64-*.zip
+          files: |
+            vs-mlrt-windows-x64-*.zip
+            payload-provenance-${{ matrix.cuda_flavor }}.json
           fail_on_unmatched_files: true
           generate_release_notes: false
           prerelease: true
+
+      - name: Verify published payload digests
+        if: steps.select.outputs.should_build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/verify_staged_payload.py --variant "${{ matrix.cuda_flavor }}" --repo "${{ github.repository }}" --evidence "payload-provenance-${{ matrix.cuda_flavor }}.json" --verify-published-only

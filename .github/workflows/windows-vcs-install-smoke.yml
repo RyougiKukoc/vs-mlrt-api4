@@ -1,17 +1,8 @@
-name: Smoke VCS tag install
+name: Smoke published VCS tag install
 
 on:
-  push:
-    branches:
-      - master
-      - main
-    paths:
-      - pyproject.toml
-      - packaging/**
-      - scripts/vsmlrt.py
-      - scripts/vsmlrt_dll_paths.py
-      - tools/smoke_vcs_extras_install.py
-      - .github/workflows/windows-vcs-install-smoke.yml
+  # Current source and exact new payloads are tested before upload by the
+  # native build workflows. This manual check exercises existing published tags.
   workflow_dispatch:
 
 permissions:
@@ -48,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe?Human=true" -OutFile VulkanSDK.exe
-          $installer = Start-Process -FilePath VulkanSDK.exe -Wait -PassThru -ArgumentList "--accept-licenses --default-answer --confirm-command install"
+          $installer = Start-Process -FilePath VulkanSDK.exe -WindowStyle Hidden -Wait -PassThru -ArgumentList "--accept-licenses --default-answer --confirm-command install"
           $installer.WaitForExit()
           "C:\VulkanSDK\1.4.321.1\Bin" | Add-Content -LiteralPath $env:GITHUB_PATH -Encoding utf8
 
