@@ -28,7 +28,7 @@ def _json_default(value):
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(data, indent=2, sort_keys=True, default=_json_default),
+        json.dumps(data, indent=2, sort_keys=True, default=_json_default, allow_nan=False),
         encoding="utf-8",
     )
 
@@ -72,6 +72,10 @@ def run_worker_case(
     timeout: int,
 ) -> dict:
     command = make_worker_command(python, env_name, backend, model, output_dir, width, height)
+    report_path = output_dir / env_name / backend / f"{model}.json"
+    # A worker must produce this run's evidence, even when it exits successfully.
+    report_path.unlink(missing_ok=True)
+    report_path.with_suffix(".npz").unlink(missing_ok=True)
     started_at = time.monotonic()
     try:
         proc = subprocess.run(
@@ -89,6 +93,10 @@ def run_worker_case(
         returncode = -1
         stdout = exc.stdout or ""
         stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", "replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", "replace")
         report = {
             "env": env_name,
             "backend": backend,
@@ -96,17 +104,31 @@ def run_worker_case(
             "ok": False,
             "error": f"worker timed out after {timeout} seconds",
         }
-        report_path = output_dir / env_name / backend / f"{model}.json"
         report["worker_returncode"] = returncode
         report["worker_elapsed_sec"] = time.monotonic() - started_at
         report["worker_stdout"] = stdout
         report["worker_stderr"] = stderr
         write_json(report_path, report)
         return report
+    except OSError as exc:
+        report = {
+            "env": env_name, "backend": backend, "model": model, "ok": False,
+            "error": f"could not start worker: {exc}",
+            "worker_returncode": None,
+            "worker_elapsed_sec": time.monotonic() - started_at,
+        }
+        write_json(report_path, report)
+        return report
     elapsed = time.monotonic() - started_at
-    report_path = output_dir / env_name / backend / f"{model}.json"
     if report_path.exists():
-        report = json.loads(report_path.read_text(encoding="utf-8"))
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            if not isinstance(report, dict):
+                raise ValueError("worker report must be an object")
+            # Python's JSON reader accepts NaN/Infinity; the report contract does not.
+            json.dumps(report, allow_nan=False)
+        except (OSError, ValueError) as exc:
+            report = {"ok": False, "error": f"invalid worker report: {exc}"}
     else:
         report = {
             "env": env_name,
@@ -148,12 +170,16 @@ def compare_arrays(api3_report: dict, api4_report: dict) -> dict:
         result["reason"] = "output formats differ"
         return result
 
-    api3_npz = Path(api3_report["array_path"])
-    api4_npz = Path(api4_report["array_path"])
-    a3 = np.load(api3_npz)
-    a4 = np.load(api4_npz)
-    plane_names = sorted(a3.files)
-    if plane_names != sorted(a4.files):
+    try:
+        with np.load(Path(api3_report["array_path"]), allow_pickle=False) as archive:
+            a3 = {name: archive[name] for name in archive.files}
+        with np.load(Path(api4_report["array_path"]), allow_pickle=False) as archive:
+            a4 = {name: archive[name] for name in archive.files}
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        result["reason"] = f"could not read frame arrays: {exc}"
+        return result
+    plane_names = sorted(a3)
+    if not plane_names or plane_names != sorted(a4):
         result["reason"] = "plane sets differ"
         return result
 
@@ -169,16 +195,34 @@ def compare_arrays(api3_report: dict, api4_report: dict) -> dict:
         if left.shape != right.shape:
             result["reason"] = f"plane {name} shape differs"
             return result
-        diff = left.astype(np.float64) - right.astype(np.float64)
-        abs_diff = np.abs(diff)
-        plane_max = float(abs_diff.max()) if abs_diff.size else 0.0
-        plane_mean = float(abs_diff.mean()) if abs_diff.size else 0.0
-        plane_rmse = float(math.sqrt(float((diff * diff).mean()))) if diff.size else 0.0
+        if left.dtype != right.dtype or left.dtype.kind not in "iuf":
+            result["reason"] = f"plane {name} has different or unsupported dtypes"
+            return result
+        if not left.size:
+            result["reason"] = f"plane {name} is empty"
+            return result
+        if not np.isfinite(left).all() or not np.isfinite(right).all():
+            result["reason"] = f"plane {name} contains NaN or infinity"
+            return result
+        with np.errstate(over="ignore", invalid="ignore"):
+            diff = left.astype(np.float64) - right.astype(np.float64)
+            abs_diff = np.abs(diff)
+            plane_max = float(abs_diff.max())
+            plane_abs = float(abs_diff.sum())
+            plane_sq = float((diff * diff).sum())
+        if not all(math.isfinite(value) for value in (plane_max, plane_abs, plane_sq)):
+            result["reason"] = f"plane {name} difference metrics overflowed"
+            return result
+        plane_mean = plane_abs / diff.size
+        plane_rmse = math.sqrt(plane_sq / diff.size)
         plane_exact = bool(np.array_equal(left, right))
         exact = exact and plane_exact
         max_abs = max(max_abs, plane_max)
-        total_abs += float(abs_diff.sum())
-        total_sq += float((diff * diff).sum())
+        total_abs += plane_abs
+        total_sq += plane_sq
+        if not math.isfinite(total_abs) or not math.isfinite(total_sq):
+            result["reason"] = "aggregate difference metrics overflowed"
+            return result
         total_count += int(diff.size)
         result["plane_diffs"].append(
             {
@@ -200,13 +244,23 @@ def compare_arrays(api3_report: dict, api4_report: dict) -> dict:
     return result
 
 
+def comparison_passes(comparison: dict, atol: float) -> bool:
+    maximum = comparison.get("max_abs")
+    return bool(
+        comparison.get("ok")
+        and maximum is not None
+        and math.isfinite(maximum)
+        and 0.0 <= maximum <= atol
+    )
+
+
 def summarize_comparison(comparison: dict, atol: float) -> str:
     if not comparison.get("ok"):
         return f"FAILED ({comparison.get('reason', 'unknown')})"
-    if comparison.get("exact"):
+    if comparison_passes(comparison, atol) and comparison.get("exact"):
         return "EXACT"
     max_abs = comparison.get("max_abs")
-    if max_abs is not None and max_abs <= atol:
+    if comparison_passes(comparison, atol):
         return f"CLOSE max_abs={max_abs:.3g}"
     return f"DIFF max_abs={max_abs:.3g}"
 
@@ -229,6 +283,8 @@ def run_parent(args: argparse.Namespace) -> int:
         "width": args.width,
         "height": args.height,
         "atol": args.atol,
+        "autoload_enabled": True,
+        "ok": True,
         "cases": [],
     }
 
@@ -253,6 +309,8 @@ def run_parent(args: argparse.Namespace) -> int:
 
             comparison = compare_arrays(reports["api3"], reports["api4"])
             status = summarize_comparison(comparison, args.atol)
+            accepted = comparison_passes(comparison, args.atol)
+            summary["ok"] = summary["ok"] and accepted
             print(f"  compare: {status}", flush=True)
             summary["cases"].append(
                 {
@@ -262,9 +320,11 @@ def run_parent(args: argparse.Namespace) -> int:
                     "api4": reports["api4"],
                     "comparison": comparison,
                     "status": status,
+                    "accepted": accepted,
                 }
             )
 
+    summary["failed_cases"] = sum(not case["accepted"] for case in summary["cases"])
     write_json(output_dir / "summary.json", summary)
 
     print()
@@ -274,7 +334,7 @@ def run_parent(args: argparse.Namespace) -> int:
         print(f"{case['backend']:6s} {case['model']:24s} {case['status']}")
     print()
     print(f"Wrote {output_dir / 'summary.json'}")
-    return 0
+    return 0 if summary["ok"] else 1
 
 
 def backend_object(vsmlrt, backend: str, engine_folder: Path):
@@ -374,6 +434,8 @@ def frame_report(frame) -> tuple[dict, dict]:
     overall_hash = hashlib.sha256()
     for plane in range(frame.format.num_planes):
         arr = np.ascontiguousarray(np.asarray(frame[plane]))
+        if not np.isfinite(arr).all():
+            raise ValueError(f"output plane {plane} contains NaN or infinity")
         arrays[f"p{plane}"] = arr
         digest = hashlib.sha256(arr.tobytes()).hexdigest()
         overall_hash.update(arr.tobytes())
@@ -474,6 +536,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend", choices=BACKENDS, help=argparse.SUPPRESS)
     parser.add_argument("--model", choices=MODELS, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if not math.isfinite(args.atol) or args.atol < 0:
+        parser.error("--atol must be finite and non-negative")
+    if args.width <= 0 or args.height <= 0 or args.timeout <= 0:
+        parser.error("--width, --height, and --timeout must be positive")
     if args.worker and (not args.env_name or not args.backend or not args.model):
         parser.error("--worker requires --env-name, --backend, and --model")
     return args
