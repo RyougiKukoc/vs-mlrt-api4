@@ -65,7 +65,6 @@ extern "C" OrtStatusPtr OrtSessionOptionsAppendExecutionProvider_CoreML(OrtSessi
 
 using namespace std::string_literals;
 
-static const VSPlugin * myself = nullptr;
 static const OrtApi * ortapi = nullptr;
 static std::atomic<int64_t> logger_id = 0;
 
@@ -1076,7 +1075,7 @@ static void VS_CC vsOrtCreate(
             const char *modeldir = vsapi->mapGetData(in, "builtindir", 0, &error);
             if (!modeldir) modeldir = "models";
             path = std::string(modeldir) + "/" + path;
-            std::string dir { vsapi->getPluginPath(myself) };
+            std::string dir { vsapi->getPluginPath(static_cast<VSPlugin *>(userData)) };
             dir = dir.substr(0, dir.rfind('/') + 1);
             path = dir + path;
         }
@@ -1423,8 +1422,6 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
     VSPlugin *plugin,
     const VSPLUGINAPI *vspapi
 ) noexcept {
-    myself = plugin;
-
     vspapi->configPlugin(
         "io.github.amusementclub.vs_onnxruntime", "ort",
         "ONNX Runtime ML Filter Runtime",
@@ -1457,11 +1454,11 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
         ,
         "clip:vnode;num_planes:int:opt;",
         vsOrtCreate,
-        nullptr,
+        plugin,
         plugin
     );
 
-    auto getVersion = [](const VSMap *, VSMap * out, void *, VSCore *core, const VSAPI *vsapi) {
+    auto getVersion = [](const VSMap *, VSMap * out, void *userData, VSCore *core, const VSAPI *vsapi) {
         vsapi->mapSetData(out, "version", VERSION, -1, dtUtf8, maReplace);
 
         vsapi->mapSetData(
@@ -1497,7 +1494,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
             ONNX_NAMESPACE::LAST_RELEASE_VERSION, -1, dtUtf8, maReplace
         );
 
-        vsapi->mapSetData(out, "path", vsapi->getPluginPath(myself), -1, dtUtf8, maReplace);
+        vsapi->mapSetData(out, "path", vsapi->getPluginPath(static_cast<VSPlugin *>(userData)), -1, dtUtf8, maReplace);
 
 #ifdef ENABLE_CUDA
         vsapi->mapSetData(out, "providers", "CUDA", -1, dtUtf8, maAppend);
@@ -1519,6 +1516,6 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
         "onnx_version:data;"
         "path:data;"
         "providers:data[]:opt;",
-        getVersion, nullptr, plugin
+        getVersion, plugin, plugin
     );
 }
