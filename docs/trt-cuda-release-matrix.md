@@ -101,14 +101,28 @@ Windows release assets are produced by these workflows:
 | `.github/workflows/windows-vcs-models.yml` | Build and publish the shared `models` asset. |
 | `.github/workflows/windows-vcs-generic.yml` | Build and publish the NVIDIA-free `generic` asset. |
 | `.github/workflows/windows-vcs-package.yml` | Build and publish the `cu121` and `cu129` TensorRT assets. |
-| `.github/workflows/windows-vcs-install-smoke.yml` | Install from the `generic`, `cu121`, and `cu129` VCS tags and verify the installed layout. |
+| `.github/workflows/windows-vcs-install-smoke.yml` | Manual check of the already published `generic`, `cu121`, and `cu129` VCS tags. |
+
+The generic and pinned TensorRT workflows also build pull requests, without
+publishing. Each job installs its own staged zip files through the wheel build
+hook, checks installed file hashes against those zips, then runs load/layout
+smoke. Unchanged generic/model dependencies are recorded separately. The job
+writes `payload-provenance-<variant>.json` with its source commit, asset hashes,
+dependency identities, and verification result.
+
+Tag/manual publication happens only after that installation gate succeeds. A
+post-upload check compares GitHub's asset digests with the tested zips. The
+separate manual VCS smoke remains useful for checking tag selection and remote
+delivery; it is not the success gate for a concurrent build of new assets.
 
 Recommended maintainer loop:
 
 1. Change source, packaging, or workflow files on the default branch.
-2. Rebuild the affected release asset slot with `publish=true`.
-3. Run `windows-vcs-install-smoke.yml` after release assets have been refreshed.
-4. Treat stale smoke results from before the asset refresh as non-authoritative.
+2. Review the PR's native build, regression, and staged-install results.
+3. Rebuild the affected release asset slot with `publish=true`; require its
+   staged-install and published-digest checks to pass.
+4. Run `windows-vcs-install-smoke.yml` after release assets have been refreshed.
+5. Treat stale smoke results from before the asset refresh as non-authoritative.
 
 When debugging CUDA packaging, build one line at a time. The package workflow
 defaults to `cu121`; use `cu129` after the `cu121` path is healthy. `all` is
@@ -160,12 +174,22 @@ changing TensorRT lines:
 CUDA-minor-sensitive pieces live mostly in CI and packaging:
 
 - CUDA redist version and component names, for example `12.1.1` vs `12.9.1`.
+- Host toolset: `cu121` selects MSVC 14.38 so an updated hosted runner does not
+  silently make CUDA 12.1's compiler unsupported.
 - `CMAKE_CUDA_ARCHITECTURES`; `cu121` omits Blackwell `120-real`, while
   `cu129` includes it.
 - TensorRT and TensorRT-RTX download URLs.
 - `TENSORRT_LIBRARY_SUFFIX`; TensorRT 8.6 uses unversioned Windows DLL names,
   while TensorRT 11 uses names such as `nvinfer_11.dll`.
 - Runtime DLL split and overlay order under `vsmlrt/vsmlrt-cuda/`.
+
+`tools/build_custom_trtexec.py` maintains separate source lists for TensorRT
+8.6 and 11.1 and validates the selected headers. Its profiler headers, UTF-8
+manifest, log redirection, and SDK file-lock patch are part of the custom tool
+contract. `tools/test_custom_trtexec.py` checks the executable's recorded hash,
+`--help`, Unicode/long log paths, and real file-lock cleanup without a GPU.
+A failed custom build stops the package job; it no longer substitutes an
+untested vendor executable.
 
 ## Model Payload Notes
 

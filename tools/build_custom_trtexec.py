@@ -29,7 +29,8 @@ def prepare(source: Path, sdk: Path, version: str) -> None:
                 raise RuntimeError(f"{root}: TensorRT header does not match {version}")
     local = Path(__file__).resolve().parents[1] / "vstrt/trtexec"
     destination = source / "samples/trtexec"
-    for name in ["CMakeLists.txt", "logfile.cpp", "filelock_smoke.cpp", "trtexec.manifest"]:
+    shutil.copyfile(local / "CMakeLists-pinned.txt", destination / "CMakeLists.txt")
+    for name in ["logfile.cpp", "filelock_smoke.cpp", "trtexec.manifest"]:
         shutil.copyfile(local / name, destination / name)
     lock_file = source / ("samples/common/common.h" if major == "8" else "shared/utils/fileLock.cpp")
     text = lock_file.read_text(encoding="utf-8")
