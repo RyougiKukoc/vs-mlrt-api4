@@ -156,7 +156,7 @@ driver/runtime.
 
 ## CUDA-Sensitive Maintenance Points
 
-The Python distribution version `16.2.1` identifies the complete plugin release
+The Python distribution version `16.2.2` identifies the complete plugin release
 aligned with upstream tag `v16.2.test1`. The separate wrapper API version is not
 used as the package version. Most C++ code is sensitive to TensorRT
 major/version APIs rather than CUDA minor versions. Review these areas when

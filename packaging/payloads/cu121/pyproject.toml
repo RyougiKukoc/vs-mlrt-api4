@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vs-mlrt-payload-cu121"
-version = "16.2.1"
+version = "16.2.2"
 description = "Release-backed vs-mlrt CUDA 12.1 Windows payload"
 requires-python = ">=3.12"
 

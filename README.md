@@ -46,7 +46,7 @@ If pip hides build-backend output while large assets download, add `-v` to the
 install command.
 
 To update an existing VCS installation, rerun the same command with `-U`. The
-The Python distribution version `16.2.1` identifies the complete plugin release
+The Python distribution version `16.2.2` identifies the complete plugin release
 aligned with upstream tag `v16.2.test1`. The separate `vsmlrt.__version__` value
 identifies only the Python wrapper API and is not the package version. The
 Windows install flow continues to use the three tag-selected variants and the
