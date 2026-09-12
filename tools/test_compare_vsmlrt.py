@@ -86,6 +86,19 @@ class ComparisonTests(unittest.TestCase):
         self.assertIn("could not read", summary["cases"][0]["comparison"]["reason"])
         path.write_bytes(b"not an array archive")
         self.assertEqual(self.parent(reports)[0], 1)
+        reports = self.reports([1, 2], [1, 2])
+        path.write_bytes(path.read_bytes()[:-24])
+        code, summary = self.parent(reports)
+        self.assertEqual(code, 1)
+        self.assertFalse(summary["ok"])
+        self.assertIn("could not read", summary["cases"][0]["comparison"]["reason"])
+
+    def test_signed_zero_is_close_but_not_byte_exact(self):
+        code, summary = self.parent(self.reports([0.0, 1], [-0.0, 1]), atol=0)
+        self.assertEqual(code, 0)
+        self.assertTrue(summary["ok"])
+        self.assertFalse(summary["cases"][0]["comparison"]["exact"])
+        self.assertTrue(summary["cases"][0]["status"].startswith("CLOSE"))
 
     def test_no_old_report_or_array_can_mask_a_silent_worker(self):
         path = self.root / "api4" / "ncnn" / "dpir.json"

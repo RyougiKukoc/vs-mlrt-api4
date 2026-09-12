@@ -106,7 +106,9 @@ Windows release assets are produced by these workflows:
 The generic and pinned TensorRT workflows also build pull requests, without
 publishing. Each job installs its own staged zip files through the wheel build
 hook, checks installed file hashes against those zips, then runs load/layout
-smoke. Unchanged generic/model dependencies are recorded separately. The job
+smoke. CUDA jobs use the currently published generic and model dependencies,
+whose hashes are recorded separately; they do not consume a new generic build
+from another job in the same pull request. The job
 writes `payload-provenance-<variant>.json` with its source commit, asset hashes,
 dependency identities, and verification result.
 
@@ -121,6 +123,8 @@ Recommended maintainer loop:
 2. Review the PR's native build, regression, and staged-install results.
 3. Rebuild the affected release asset slot with `publish=true`; require its
    staged-install and published-digest checks to pass.
+   If generic also changed, publish generic first, then run the CUDA jobs so
+   their recorded generic dependency hash identifies that new payload.
 4. Run `windows-vcs-install-smoke.yml` after release assets have been refreshed.
 5. Treat stale smoke results from before the asset refresh as non-authoritative.
 

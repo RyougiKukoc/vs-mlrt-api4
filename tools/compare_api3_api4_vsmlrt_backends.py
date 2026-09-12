@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import traceback
+import zipfile
 from pathlib import Path
 
 
@@ -171,11 +172,11 @@ def compare_arrays(api3_report: dict, api4_report: dict) -> dict:
         return result
 
     try:
-        with np.load(Path(api3_report["array_path"]), allow_pickle=False) as archive:
+        with Path(api3_report["array_path"]).open("rb") as source, np.load(source, allow_pickle=False) as archive:
             a3 = {name: archive[name] for name in archive.files}
-        with np.load(Path(api4_report["array_path"]), allow_pickle=False) as archive:
+        with Path(api4_report["array_path"]).open("rb") as source, np.load(source, allow_pickle=False) as archive:
             a4 = {name: archive[name] for name in archive.files}
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as exc:
         result["reason"] = f"could not read frame arrays: {exc}"
         return result
     plane_names = sorted(a3)
@@ -215,7 +216,9 @@ def compare_arrays(api3_report: dict, api4_report: dict) -> dict:
             return result
         plane_mean = plane_abs / diff.size
         plane_rmse = math.sqrt(plane_sq / diff.size)
-        plane_exact = bool(np.array_equal(left, right))
+        # EXACT means byte equality, consistent with the recorded frame hashes.
+        # Signed zeros may be numerically equal while their bytes differ.
+        plane_exact = left.tobytes() == right.tobytes()
         exact = exact and plane_exact
         max_abs = max(max_abs, plane_max)
         total_abs += plane_abs
@@ -268,6 +271,7 @@ def summarize_comparison(comparison: dict, atol: float) -> str:
 def run_parent(args: argparse.Namespace) -> int:
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "summary.json").unlink(missing_ok=True)
 
     envs = {
         "api3": args.api3_python.resolve(),
