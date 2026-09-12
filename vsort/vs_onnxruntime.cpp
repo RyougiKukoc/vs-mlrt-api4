@@ -457,7 +457,9 @@ struct Resource {
 #endif // ENABLE_CUDA
 
 #if defined(ENABLE_CUDA) || defined(ENABLE_DML)
-    bool require_replay;
+    // CPU sessions must run their first frame too. CUDA/DML opt in to replay
+    // below; an indeterminate flag could skip CPU inference on first use.
+    bool require_replay = false;
 #endif
 };
 

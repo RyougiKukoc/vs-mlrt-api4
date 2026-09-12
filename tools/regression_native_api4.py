@@ -192,8 +192,16 @@ def check_identity_model(vs, policy, args, directory):
                     actual = np.asarray(frame[plane])
                     if not np.isfinite(actual).all():
                         raise AssertionError(f"Non-finite output in plane {plane}, frame {n}")
-                    if not np.array_equal(actual, np.asarray(expected[plane])):
-                        raise AssertionError(f"Incorrect identity output in plane {plane}, frame {n}")
+                    reference = np.asarray(expected[plane])
+                    if not np.array_equal(actual, reference):
+                        difference = np.abs(actual.astype(np.float64) - reference.astype(np.float64))
+                        position = np.unravel_index(int(difference.argmax()), difference.shape)
+                        raise AssertionError(
+                            f"Incorrect identity output in plane {plane}, frame {n}: "
+                            f"max_abs={difference.max():.9g}, mean_abs={difference.mean():.9g}, "
+                            f"at={position}, actual={float(actual[position]):.9g}, "
+                            f"expected={float(reference[position]):.9g}, dtype={actual.dtype}"
+                        )
         held_pending.result().close()
         del output, pending, held_pending, future
         gc.collect()
