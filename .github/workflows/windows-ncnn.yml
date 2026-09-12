@@ -1,13 +1,6 @@
 name: Build (Windows-NCNN)
 
 on:
-  push:
-    branches:
-      - '**'
-    paths:
-      - 'common/**'
-      - 'vsncnn/**'
-      - '.github/workflows/windows-ncnn.yml'
   workflow_call:
     inputs:
       tag:

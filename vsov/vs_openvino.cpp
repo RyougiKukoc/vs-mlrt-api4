@@ -35,7 +35,6 @@
 
 using namespace std::string_literals;
 
-static const VSPlugin * myself = nullptr;
 
 
 static std::array<int, 4> getShape(
@@ -634,7 +633,7 @@ static void VS_CC vsOvCreate(
             const char *modeldir = vsapi->mapGetData(in, "builtindir", 0, &error);
             if (!modeldir) modeldir = "models";
             path = std::string(modeldir) + "/" + path;
-            std::string dir { vsapi->getPluginPath(myself) };
+            std::string dir { vsapi->getPluginPath(static_cast<VSPlugin *>(userData)) };
             dir = dir.substr(0, dir.rfind('/') + 1);
             path = dir + path;
         }
@@ -763,8 +762,6 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
     VSPlugin *plugin,
     const VSPLUGINAPI *vspapi
 ) {
-    myself = plugin;
-
     vspapi->configPlugin(
         "io.github.amusementclub.vs_openvino", "ov", "OpenVINO ML Filter Runtime",
         VS_MAKE_VERSION(3, 0), VAPOURSYNTH_API_VERSION, 0, plugin
@@ -788,11 +785,11 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
         "flexible_output_prop:data:opt;",
         "clip:vnode;num_planes:int:opt;",
         vsOvCreate,
-        nullptr,
+        plugin,
         plugin
     );
 
-    auto getVersion = [](const VSMap *, VSMap * out, void *, VSCore *, const VSAPI *vsapi) {
+    auto getVersion = [](const VSMap *, VSMap * out, void *userData, VSCore *, const VSAPI *vsapi) {
         vsapi->mapSetData(out, "version", VERSION, -1, dtUtf8, maReplace);
 
         std::ostringstream ostream;
@@ -810,12 +807,12 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
         vsapi->mapSetInt(out, "enable_visualization", 1, maReplace);
 #endif // ENABLE_VISUALIZATION
 
-        vsapi->mapSetData(out, "path", vsapi->getPluginPath(myself), -1, dtUtf8, maReplace);
+        vsapi->mapSetData(out, "path", vsapi->getPluginPath(static_cast<VSPlugin *>(userData)), -1, dtUtf8, maReplace);
     };
     vspapi->registerFunction(
         "Version", "",
         "version:data;openvino_version_build:data;openvino_version:data;onnx_version:data;enable_visualization:int:opt;path:data;",
-        getVersion, nullptr, plugin
+        getVersion, plugin, plugin
     );
 
     auto availableDevices = [](const VSMap *, VSMap * out, void *, VSCore *, const VSAPI *vsapi) {

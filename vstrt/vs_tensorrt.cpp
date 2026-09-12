@@ -42,7 +42,6 @@ static std::wstring translateName(const char *name) {
 
 using namespace std::string_literals;
 
-static const VSPlugin * myself = nullptr;
 
 struct TicketSemaphore {
     std::atomic<intptr_t> ticket {};
@@ -676,8 +675,6 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
     }
 #endif // NV_TENSORRT_MAJOR == 9 && defined(_WIN32) && !defined(TRT_MAJOR_RTX)
 
-    myself = plugin;
-
     vspapi->registerFunction("Model",
         "clips:vnode[];"
         "engine_path:data;"
@@ -694,7 +691,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
         plugin
     );
 
-    auto getVersion = [](const VSMap *, VSMap * out, void *, VSCore *, const VSAPI *vsapi) {
+    auto getVersion = [](const VSMap *, VSMap * out, void *userData, VSCore *, const VSAPI *vsapi) {
         vsapi->mapSetData(out, "version", VERSION, -1, dtUtf8, maReplace);
 
         vsapi->mapSetData(
@@ -724,7 +721,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
             std::to_string(__CUDART_API_VERSION).c_str(), -1, dtUtf8, maReplace
         );
 
-        vsapi->mapSetData(out, "path", vsapi->getPluginPath(myself), -1, dtUtf8, maReplace);
+        vsapi->mapSetData(out, "path", vsapi->getPluginPath(static_cast<VSPlugin *>(userData)), -1, dtUtf8, maReplace);
     };
     vspapi->registerFunction(
         "Version", "",
@@ -734,7 +731,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(
         "cuda_runtime_version:data;"
         "cuda_runtime_version_build:data;"
         "path:data;",
-        getVersion, nullptr, plugin
+        getVersion, plugin, plugin
     );
 
     vspapi->registerFunction("DeviceProperties", "device_id:int:opt;", "any", getDeviceProp, nullptr, plugin);

@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -2727,8 +2729,13 @@ static void fuse_binaryop_with_scalar(
 }
 
 std::optional<std::tuple<char*, unsigned char*>> onnx2ncnn(onnx::ModelProto& model) {
-    auto pp = std::tmpfile();
-    auto bp = std::tmpfile();
+    const std::unique_ptr<FILE, decltype(&std::fclose)> param_file(std::tmpfile(), std::fclose);
+    const std::unique_ptr<FILE, decltype(&std::fclose)> model_file(std::tmpfile(), std::fclose);
+    auto pp = param_file.get();
+    auto bp = model_file.get();
+    if (!pp || !bp) {
+        return {};
+    }
 
     // magic
     fprintf(pp, "7767517\n");
@@ -2903,6 +2910,56 @@ std::optional<std::tuple<char*, unsigned char*>> onnx2ncnn(onnx::ModelProto& mod
     fuse_multiheadattention(mutable_graph, weights, node_reference, blob_names, reduced_node_count);
     fuse_binaryop_with_scalar(mutable_graph, weights, node_reference, blob_names, reduced_node_count);
     fuse_rewrite_gather(mutable_graph, weights, node_reference, blob_names, reduced_node_count);
+
+    // ONNX permits an omitted kernel_shape, inferred from the constant weights.
+    // Normalize it before both NCNN layer selection and parameter emission.
+    for (auto & node : *mutable_graph->mutable_node()) {
+        if (node.op_type() != "Conv" && node.op_type() != "ConvTranspose") {
+            continue;
+        }
+        if (node.input_size() < 2) {
+            fprintf(stderr, "%s requires constant convolution weights\n", node.op_type().c_str());
+            return {};
+        }
+        const auto weight = weights.find(node.input(1));
+        if (weight == weights.end() || weight->second.dims_size() < 3 || weight->second.dims_size() > 4) {
+            fprintf(stderr, "%s requires constant 1D or 2D convolution weights\n", node.op_type().c_str());
+            return {};
+        }
+        const auto & dims = weight->second.dims();
+        for (const auto dim : dims) {
+            if (dim <= 0 || dim > INT_MAX) {
+                fprintf(stderr, "%s has invalid convolution weight dimensions\n", node.op_type().c_str());
+                return {};
+            }
+        }
+        const onnx::AttributeProto *kernel_shape = nullptr;
+        for (const auto & attr : node.attribute()) {
+            if (attr.name() == "kernel_shape") {
+                kernel_shape = &attr;
+                break;
+            }
+        }
+        if (kernel_shape) {
+            if (kernel_shape->ints_size() != dims.size() - 2) {
+                fprintf(stderr, "%s kernel_shape rank does not match its weights\n", node.op_type().c_str());
+                return {};
+            }
+            for (int axis = 0; axis < kernel_shape->ints_size(); ++axis) {
+                if (kernel_shape->ints(axis) != dims.Get(axis + 2)) {
+                    fprintf(stderr, "%s kernel_shape does not match its weights\n", node.op_type().c_str());
+                    return {};
+                }
+            }
+        } else {
+            auto *attr = node.add_attribute();
+            attr->set_name("kernel_shape");
+            attr->set_type(onnx::AttributeProto::INTS);
+            for (int axis = 2; axis < dims.size(); ++axis) {
+                attr->add_ints(dims.Get(axis));
+            }
+        }
+    }
 
     // reduce common const weight node_reference
     for (int i = 0; i < node_count; i++) {
@@ -5143,11 +5200,8 @@ std::optional<std::tuple<char*, unsigned char*>> onnx2ncnn(onnx::ModelProto& mod
     std::rewind(pp);
     if (std::fread(param, 1, param_size, pp) != param_size) {
         vsh::vsh_aligned_free(param);
-        std::fclose(pp);
-        std::fclose(bp);
         return {};
     }
-    std::fclose(pp);
 
     auto model_size = static_cast<size_t>(std::ftell(bp));
     auto model_bin = vsh::vsh_aligned_malloc<unsigned char>(model_size, sizeof(void *));
@@ -5155,9 +5209,8 @@ std::optional<std::tuple<char*, unsigned char*>> onnx2ncnn(onnx::ModelProto& mod
     if (std::fread(model_bin, 1, model_size, bp) != model_size) {
         vsh::vsh_aligned_free(model_bin);
         vsh::vsh_aligned_free(param);
-        std::fclose(bp);
+        return {};
     }
-    std::fclose(bp);
 
     return std::make_tuple(param, model_bin);
 }

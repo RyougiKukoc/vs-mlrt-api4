@@ -1,13 +1,6 @@
 name: Build (Windows-OV)
 
 on:
-  push:
-    branches:
-      - '**'
-    paths:
-      - 'common/**'
-      - 'vsov/**'
-      - '.github/workflows/windows-ov.yml'
   workflow_call:
     inputs:
       tag:
