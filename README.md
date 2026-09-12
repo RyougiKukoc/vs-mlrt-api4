@@ -117,6 +117,25 @@ while ORT substantially increases package size and DLL placement complexity.
 Users who explicitly need ORT should use upstream packages or build `vsort`
 from source.
 
+`windows-vcs-generic.yml` and `windows-vcs-package.yml` maintain the Windows
+release payloads. The older individual NCNN, OpenVINO, TensorRT, and TRT-RTX
+workflows are manual/reusable compatibility builds. `windows-ort.yml` remains
+an independent compatibility build with its existing CUDA/DirectML dependency
+versions; it uses API4 headers and R77 to check plugin ownership and CPU model
+execution. Its CPU tests do not verify CUDA or DirectML inference.
+
+To run the artifact regressions with an R77 Python environment:
+
+```text
+python tools/regression_native_api4.py --plugin path/to/vsncnn.dll --namespace ncnn --exercise-ncnn --output verification/ncnn.json
+python tools/regression_native_api4.py --plugin path/to/vsort.dll --namespace ort --exercise-ort --output verification/ort.json
+```
+
+Model cases require NumPy and ONNX. NCNN execution additionally requires a
+Vulkan device supporting fp16. Omit the `--exercise-*` option to check only
+registration and two independent core lifetimes; repeat `--dll-dir` when
+support DLLs are outside the plugin's normal package directories.
+
 `vsmigx` and the CoreML path are not part of this fork's migration/release
 scope. The maintainer does not have suitable ROCm/MIGraphX or Apple/CoreML
 hardware for meaningful build and runtime validation, so those paths are left

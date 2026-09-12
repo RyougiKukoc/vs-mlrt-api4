@@ -1,12 +1,6 @@
 name: Build (Windows-TRT)
 
 on:
-  push:
-    branches:
-      - '**'
-    paths:
-      - 'vstrt/**'
-      - '.github/workflows/windows-trt.yml'
   workflow_call:
     inputs:
       tag:
