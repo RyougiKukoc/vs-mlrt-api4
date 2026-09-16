@@ -424,7 +424,8 @@ static void VS_CC vsTrtCreate(
     engine_stream.read(engine_data.get(), static_cast<std::streamsize>(engine_nbytes));
 
     d->runtime.reset(nvinfer1::createInferRuntime(*logger));
-#if defined(TRT_MAJOR_RTX) && NV_TENSORRT_VERSION >= 10100
+#if defined(TRT_MAJOR_RTX)
+#if NV_TENSORRT_VERSION >= 10100
     if (static_cast<int64_t>(engine_nbytes) < d->runtime->getEngineHeaderSize()) {
         return set_error("invalid engine size: " + std::to_string(engine_nbytes));
     }
@@ -460,7 +461,8 @@ static void VS_CC vsTrtCreate(
             return set_error(diagnostics_message.str());
         }
     }
-#endif
+#endif // NV_TENSORRT_VERSION >= 10100
+#endif // defined(TRT_MAJOR_RTX)
     auto maybe_engine = initEngine(
         engine_data.get(),
         static_cast<size_t>(engine_nbytes),

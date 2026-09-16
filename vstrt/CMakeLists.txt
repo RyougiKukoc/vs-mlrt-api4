@@ -10,6 +10,11 @@ option(USE_NVINFER_PLUGIN "Initialize nvinfer_plugin" FALSE)
 option(USE_NVINFER_PLUGIN_STATIC "Use static nvinfer_plugin" FALSE)
 set(TENSORRT_LIBRARY_SUFFIX "" CACHE STRING "TensorRT library suffix")
 
+set(TENSORRT_LIBRARY_DIRS
+    "${TENSORRT_HOME}/lib"
+    "${TENSORRT_HOME}/targets/x86_64-linux-gnu/lib"
+)
+
 if (WIN32)
     file(GLOB files "${TENSORRT_HOME}/lib/tensorrt_rtx*.lib")
 else()
@@ -42,6 +47,18 @@ if (USE_TRT_RTX)
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
     )
+
+    if (UNIX AND NOT APPLE)
+        set_target_properties(vstrt_rtx PROPERTIES
+            BUILD_RPATH "$ORIGIN"
+            INSTALL_RPATH "$ORIGIN"
+        )
+    elseif (APPLE)
+        set_target_properties(vstrt_rtx PROPERTIES
+            BUILD_RPATH "@loader_path"
+            INSTALL_RPATH "@loader_path"
+        )
+    endif()
 
     target_link_directories(vstrt_rtx PRIVATE ${TENSORRT_HOME}/lib)
     target_link_libraries(vstrt_rtx PRIVATE CUDA::cudart_static)
@@ -94,8 +111,38 @@ else()
         CXX_STANDARD_REQUIRED ON
     )
 
-    target_link_directories(vstrt PRIVATE ${TENSORRT_HOME}/lib)
-    target_link_libraries(vstrt PRIVATE CUDA::cudart_static "nvinfer${TENSORRT_LIBRARY_SUFFIX}")
+    if (UNIX AND NOT APPLE)
+        set_target_properties(vstrt PROPERTIES
+            BUILD_RPATH "$ORIGIN"
+            INSTALL_RPATH "$ORIGIN"
+        )
+    elseif (APPLE)
+        set_target_properties(vstrt PROPERTIES
+            BUILD_RPATH "@loader_path"
+            INSTALL_RPATH "@loader_path"
+        )
+    endif()
+
+    target_link_directories(vstrt PRIVATE ${TENSORRT_LIBRARY_DIRS})
+    if (WIN32)
+        set(TENSORRT_RUNTIME_LIBRARY "nvinfer${TENSORRT_LIBRARY_SUFFIX}")
+    else()
+        # Runtime-only TensorRT archives often omit the development symlink
+        # libnvinfer.so. Resolve the versioned ELF directly for Linux fallback.
+        file(GLOB TENSORRT_RUNTIME_CANDIDATES
+            "${TENSORRT_HOME}/lib/libnvinfer.so"
+            "${TENSORRT_HOME}/lib/libnvinfer.so.*"
+            "${TENSORRT_HOME}/targets/x86_64-linux-gnu/lib/libnvinfer.so"
+            "${TENSORRT_HOME}/targets/x86_64-linux-gnu/lib/libnvinfer.so.*"
+        )
+        list(SORT TENSORRT_RUNTIME_CANDIDATES)
+        list(LENGTH TENSORRT_RUNTIME_CANDIDATES TENSORRT_RUNTIME_COUNT)
+        if (TENSORRT_RUNTIME_COUNT EQUAL 0)
+            message(FATAL_ERROR "Could not find libnvinfer.so* under ${TENSORRT_HOME}/lib")
+        endif()
+        list(GET TENSORRT_RUNTIME_CANDIDATES -1 TENSORRT_RUNTIME_LIBRARY)
+    endif()
+    target_link_libraries(vstrt PRIVATE CUDA::cudart_static "${TENSORRT_RUNTIME_LIBRARY}")
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         target_link_options(vstrt PRIVATE "/DELAYLOAD:nvinfer${TENSORRT_LIBRARY_SUFFIX}.dll" "delayimp.lib")
