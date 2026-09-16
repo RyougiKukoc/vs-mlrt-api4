@@ -99,7 +99,7 @@ jobs:
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''
       run: |
         cd artifact
-        7z a -t7z -mx=9 ../../VSTRT-RTX-Windows-x64.${{ github.event.inputs.tag }}.7z .
+        7z a -t7z -mx=0 ../../VSTRT-RTX-Windows-x64.${{ github.event.inputs.tag }}.7z .
 
     - name: Release
       uses: softprops/action-gh-release@v2

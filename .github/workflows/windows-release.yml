@@ -86,7 +86,7 @@ jobs:
     - name: Compress scirpts.7z
       run: |
         cd scripts
-        7za a -t7z -bb3 -mx=9 ../scripts.${{ github.event.inputs.tag }}.7z .
+        7za a -t7z -bb3 -mx=0 ../scripts.${{ github.event.inputs.tag }}.7z .
 
     - name: Upload scripts release
       uses: actions/upload-artifact@v7
@@ -129,7 +129,7 @@ jobs:
         popd
         ls -lR
         du -sh
-        7za a -t7z -bb3 -mx=9 ../models.7z .
+        7za a -t7z -bb3 -mx=0 ../models.7z .
 
     - name: Upload model release
       uses: actions/upload-artifact@v7
@@ -162,7 +162,7 @@ jobs:
         popd
         ls -lR
         du -sh
-        7za a -t7z -bb3 -mx=9 ../ext-models.7z .
+        7za a -t7z -bb3 -mx=0 ../ext-models.7z .
 
     - name: Upload external model release
       uses: actions/upload-artifact@v7
@@ -195,7 +195,7 @@ jobs:
         popd
         ls -lR
         du -sh
-        7za a -t7z -bb3 -mx=9 ../contrib-models.7z .
+        7za a -t7z -bb3 -mx=0 ../contrib-models.7z .
 
     - name: Upload contrib model release
       uses: actions/upload-artifact@v7
@@ -227,7 +227,7 @@ jobs:
         popd
         ls -lR
         du -sh
-        7za a -t7z -bb3 -mx=9 ../contrib-models.7z .
+        7za a -t7z -bb3 -mx=0 ../contrib-models.7z .
 
     - name: Rename release asset
       run: |
@@ -325,7 +325,7 @@ jobs:
         cp scripts-release/*.py release-cpu/
         cd release-cpu
         ls -lR
-        7za a -t7z -bb3 -mx=9 ../vsmlrt-windows-x64-cpu.7z .
+        7za a -t7z -bb3 -mx=0 ../vsmlrt-windows-x64-cpu.7z .
 
     - name: Upload CPU-only release
       uses: actions/upload-artifact@v7
@@ -360,7 +360,7 @@ jobs:
         cp scripts-release/*.py release-generic-gpu/
         cd release-generic-gpu
         ls -lR
-        7za a -t7z -bb3 -mx=9 ../vsmlrt-windows-x64-generic-gpu.7z .
+        7za a -t7z -bb3 -mx=0 ../vsmlrt-windows-x64-generic-gpu.7z .
 
     - name: Upload generic GPU release
       uses: actions/upload-artifact@v7
@@ -403,7 +403,7 @@ jobs:
         cp scripts-release/*.py release-cuda/
         cd release-cuda
         ls -lR
-        7za a -t7z -bb3 -mx=9 -v2147483647b ../vsmlrt-windows-x64-cuda.7z .
+        7za a -t7z -bb3 -mx=0 -v2147483647b ../vsmlrt-windows-x64-cuda.7z .
 
     - name: Upload CUDA release
       uses: actions/upload-artifact@v7
@@ -436,7 +436,7 @@ jobs:
         rm --verbose cublas*.dll cudnn*.dll cufft*.dll cupti*.dll nvblas*.dll
         cd ..
         rm --verbose vsort/onnxruntime_providers_*.dll
-        7za a -t7z -bb3 -mx=9 -v2147483647b ../vsmlrt-windows-x64-tensorrt.7z .
+        7za a -t7z -bb3 -mx=0 -v2147483647b ../vsmlrt-windows-x64-tensorrt.7z .
 
     - name: Upload TensorRT release
       uses: actions/upload-artifact@v7
@@ -480,7 +480,7 @@ jobs:
         cp scripts-release/*.py release-hip/
         cd release-hip
         ls -lR
-        7za a -t7z -bb3 -mx=9 ../vsmlrt-windows-x64-migraphx.7z .
+        7za a -t7z -bb3 -mx=0 ../vsmlrt-windows-x64-migraphx.7z .
 
     - name: Upload MIGraphX release
       uses: actions/upload-artifact@v7

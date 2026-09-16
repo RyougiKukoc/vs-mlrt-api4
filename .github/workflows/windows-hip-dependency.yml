@@ -78,7 +78,7 @@ jobs:
 
     - name: Compress
       run: |
-        7z a -t7z -mx=3 vsmlrt-hip.7z vsmlrt-hip
+        7z a -t7z -mx=0 vsmlrt-hip.7z vsmlrt-hip
 
     - name: Upload
       uses: actions/upload-artifact@v4

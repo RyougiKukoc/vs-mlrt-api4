@@ -149,7 +149,7 @@ jobs:
       - name: Package model payload
         shell: pwsh
         run: |
-          7z a -tzip -mx=9 "models.zip" .\payload-models\*
+          7z a -tzip -mx=0 "models.zip" .\payload-models\*
           $asset = Get-Item "models.zip"
           if ($asset.Length -ge 2147483648) {
             throw "Release asset exceeds GitHub's 2 GiB limit: $($asset.Name) ($($asset.Length) bytes)"

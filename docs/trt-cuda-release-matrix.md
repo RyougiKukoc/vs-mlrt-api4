@@ -150,6 +150,45 @@ A green hosted CUDA smoke verifies:
 It does not prove real GPU inference. Final TRT runtime checks still need a
 machine with a compatible NVIDIA driver.
 
+## Maintainer GPU Verification
+
+Do not mark a CUDA line unavailable merely because a hosted runner lacks an
+NVIDIA driver. First probe the maintainer host with `nvidia-smi` and use an
+isolated VapourSynth/Python environment when a compatible GPU is present.
+Validate `cu121` and `cu129` in separate environments or extracted payload
+directories; they must never be overlaid into the same plugin directory.
+
+For each refreshed CUDA Release slot:
+
+1. Download every selected payload zip and compare its SHA-256 with GitHub's
+   Release asset digest before extraction.
+2. Explicitly load `vstrt.dll` from the extracted package after adding both
+   the plugin root and `vsmlrt-cuda/` to the Windows DLL search path. Check
+   `core.trt.Version()` and `core.trt.DeviceProperties(0)` against the
+   intended CUDA/TensorRT line and physical GPU.
+3. For `cu129`, explicitly load `vstrt_rtx.dll` too. Build a small identity
+   ONNX engine with the bundled `tensorrt_rtx.exe`, then render an identity
+   `GRAY_S` frame through `core.trt_rtx.Model`; require matching dimensions,
+   format, and frame hash. This proves a real GPU engine build and plugin
+   inference rather than just DLL discovery.
+4. Treat `cu121` engine execution as a separate gate when a matching TensorRT
+   8.6 engine compiler is available. The runtime release deliberately excludes
+   build-only `trtexec`, so its release check still must prove plugin loading,
+   version reporting, and GPU device enumeration without adding build tools to
+   the user payload.
+
+These are CUDA runtime/package checks, not an API3/API4 behavior comparison.
+Record the driver, GPU, runtime versions, Release digests, and any engine/frame
+hashes in the release notes or maintenance log.
+
+## Compression Policy
+
+All `vs-mlrt` release archive creation uses `-mx=0` (store mode). NVIDIA
+runtime DLLs, models, and payload zips are already compressed or do not repay
+CI CPU time with a slower compression level. Keep Actions artifact uploads at
+`compression-level: 0` as well. Retain the existing GitHub per-asset size
+checks; faster storage must not bypass the 2 GiB release limit.
+
 For `generic`, hosted smoke installs the Vulkan SDK so `vsncnn.dll` can load on
 the runner. Real ncnn and OpenVINO inference still depends on the user's GPU
 driver/runtime.
