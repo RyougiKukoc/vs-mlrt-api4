@@ -2,17 +2,17 @@
 
 VapourSynth ML runtime plugins and the `vsmlrt.py` Python wrapper.
 
-This fork is API4-oriented and publishes Windows x64 binary payloads through
-GitHub Releases. Users install from one of three VCS tags, `generic`, `cu121`,
-or `cu129`. The CUDA tags install their own TensorRT payload plus the
-`generic` plugin payload automatically, while GitHub Releases stay trimmed so
-`cu121` and `cu129` publish only the TRT-side assets.
+This fork is API4-oriented and publishes tested Windows and Linux x86_64 binary
+payloads through GitHub Releases. Users install from one of three VCS refs,
+`generic`, `cu121`, or `cu129`. The CUDA refs install their own TensorRT
+payload plus the `generic` plugin payload automatically, while GitHub Releases
+stay trimmed so `cu121` and `cu129` publish only the TRT-side assets.
 
-## Quick Install: Windows
+## Quick Install
 
 Requirements:
 
-- Windows x64.
+- Windows or Linux x86_64.
 - Python 3.12 or newer.
 - A VapourSynth R75+ Python environment.
 - For `generic`: a working runtime for the backend you use:
@@ -52,8 +52,23 @@ identifies only the Python wrapper API and is not the package version. The
 Windows install flow continues to use the three tag-selected variants and the
 flattened OpenVINO runtime layout.
 
-On non-Windows platforms this VCS package does not install native prebuilt
-payloads. Use upstream packages or build the required backend from source.
+On Linux x86_64, the build hook downloads the matching tested Linux Release
+payload by default and reports `vs-mlrt: using Release asset`. The Linux
+`generic` payload carries the CPU-capable OpenVINO backend (`vsov`); the CUDA
+payloads overlay the matching TensorRT backend on it. Linux does not ship the
+Vulkan/NCNN binary because its Vulkan driver requirements are materially less
+portable than the OpenVINO CPU payload. Windows continues to ship both NCNN and
+OpenVINO in `generic`.
+
+Set `VSMLRT_FORCE_BUILD=1` to bypass Release assets. The fallback invokes the
+repository CMake projects and requires a compatible VapourSynth wheel SDK plus
+the selected backend SDKs. It prepends the installed wheel's
+`vapoursynth/pkgconfig` directory to `PKG_CONFIG_PATH` without discarding an
+existing value. Generic builds require OpenVINO, ONNX, and Protobuf CMake
+packages; CUDA builds additionally require the matching CUDA, TensorRT, and,
+for `cu129` RTX, TensorRT-RTX SDKs. Set `VSMLRT_OPENVINO_DIR`,
+`VSMLRT_TENSORRT_HOME`, `VSMLRT_TENSORRT_RTX_HOME`, `CUDAToolkit_ROOT`, and
+`VSMLRT_RUNTIME_ROOTS` as appropriate for a non-standard SDK layout.
 
 ## Uninstall
 
@@ -110,6 +125,20 @@ The released VCS tags are:
 - `cu121`: `vstrt` built for the CUDA 12.1/TensorRT 8.6 line.
 - `cu129`: `vstrt` plus `vstrt_rtx` built for the CUDA 12.9/TensorRT 11 line.
 
+On Linux x86_64, the matching release asset names are
+`vs-mlrt-linux-x64-generic.zip`,
+`vs-mlrt-linux-x64-tensorrt-<variant>.zip`,
+`vs-mlrt-linux-x64-cuda-<variant>.zip`,
+`vs-mlrt-linux-x64-cudnn-<variant>.zip`, and
+`vs-mlrt-linux-x64-tensorrt-builder-<variant>.zip`. The CUDA assets overlay in
+that order after the generic asset. Every zip is rooted at `vsmlrt/` and
+contains ELF `.so` files only; the shared `models.zip` payload is installed for
+all three refs. Linux CUDA payloads currently carry the standard `vstrt`
+backend; `vstrt_rtx` remains Windows-only until a separately validated Linux
+TensorRT-RTX runtime is available. Linux wheels use the VapourSynth R79 baseline tag
+`manylinux_2_27_x86_64`. This is an end-to-end runtime floor, even if an
+individual plugin's `readelf --version-info` output has an older GLIBC symbol.
+
 The `vsort`/ONNX Runtime backend was migrated to API4 in source, but this fork
 does not publish it in the `generic` payload. For our target Windows users,
 ncnn/Vulkan has no obvious practical disadvantage compared with ORT/DirectML,
@@ -164,17 +193,26 @@ These Release tags remain as binary asset slots consumed by the root build
 hook:
 
 - `models`: `models.zip`.
-- `generic`: `vs-mlrt-windows-x64-generic.zip`.
+- `generic`: `vs-mlrt-windows-x64-generic.zip` and
+  `vs-mlrt-linux-x64-generic.zip`.
 - `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip`,
   `vs-mlrt-windows-x64-cuda-cu121.zip`, and
-  `vs-mlrt-windows-x64-cudnn-cu121.zip`.
+  `vs-mlrt-windows-x64-cudnn-cu121.zip`, plus
+  `vs-mlrt-linux-x64-tensorrt-cu121.zip`,
+  `vs-mlrt-linux-x64-cuda-cu121.zip`,
+  `vs-mlrt-linux-x64-cudnn-cu121.zip`, and
+  `vs-mlrt-linux-x64-tensorrt-builder-cu121.zip`.
 - `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`,
   `vs-mlrt-windows-x64-cuda-cu129.zip`,
   `vs-mlrt-windows-x64-cudnn-cu129.zip`,
   `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`,
   `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`,
   `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, and
-  `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`.
+  `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`, plus
+  `vs-mlrt-linux-x64-tensorrt-cu129.zip`,
+  `vs-mlrt-linux-x64-cuda-cu129.zip`,
+  `vs-mlrt-linux-x64-cudnn-cu129.zip`, and
+  `vs-mlrt-linux-x64-tensorrt-builder-cu129.zip`.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN

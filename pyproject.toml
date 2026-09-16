@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "vs-mlrt"
 version = "16.2.2"
-description = "VapourSynth ML runtime tools with release-backed Windows payloads"
+description = "VapourSynth ML runtime tools with release-backed Windows and Linux payloads"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "GPL-3.0-or-later"

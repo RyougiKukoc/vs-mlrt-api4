@@ -142,7 +142,9 @@ def check_identity_model(vs, policy, args, directory):
     half_output = "half-output" in case
     width = height = 8 if "aligned-control" in case else 9
     model_path = directory / "identity.onnx"
-    make_identity_model(model_path, operator, kernel, width, height)
+    missing_model = case == "missing-model"
+    if not missing_model:
+        make_identity_model(model_path, operator, kernel, width, height)
     core, plugin = load_core(vs, args.plugin, args.namespace, "model")
     version = plugin.Version()
     base = core.std.BlankClip(width=width, height=height, format=vs.RGBH if half_input else vs.RGBS, length=4)
@@ -155,20 +157,32 @@ def check_identity_model(vs, policy, args, directory):
         return frame
 
     source = core.std.ModifyFrame(base, base, pattern)
-    arguments = {"network_path": str(model_path), "fp16": fp16, "output_format": int(half_output),
-                 "tilesize": [width, height], "device_id": args.device_id, "num_streams": 2}
+    arguments = {"network_path": str(model_path), "fp16": fp16, "tilesize": [width, height]}
+    if args.namespace == "ov":
+        arguments["device"] = "CPU"
+    elif args.namespace in {"trt", "trt_rtx"}:
+        if args.trt_engine is None:
+            raise RuntimeError("--trt-engine is required for TensorRT model execution")
+        arguments = {"engine_path": str(args.trt_engine), "tilesize": [width, height],
+                     "device_id": args.device_id, "num_streams": 2}
+    else:
+        arguments.update(output_format=int(half_output), device_id=args.device_id, num_streams=2)
     if args.namespace == "ort":
         arguments["provider"] = "CPU"
     if case == "conv-builtin":
         arguments.update(network_path=model_path.name, builtin=True,
                          builtindir=os.path.relpath(directory, args.plugin.parent))
-    if kernel in ("mismatch", "zero", "rank"):
+    if missing_model and args.namespace not in {"trt", "trt_rtx"}:
+        arguments["network_path"] = str(directory / "does-not-exist.onnx")
+    elif missing_model:
+        arguments["engine_path"] = str(directory / "does-not-exist.engine")
+    if missing_model or kernel in ("mismatch", "zero", "rank"):
         try:
             rejected = plugin.Model(source, **arguments)
             rejected.get_frame(0)
         except vs.Error as error:
             return {"version": version, "expected_error": str(error)}
-        raise AssertionError("Invalid convolution kernel was not rejected")
+        raise AssertionError("Invalid model input was not rejected")
 
     def make_output():
         if case == "conv-flexible":
@@ -182,12 +196,14 @@ def check_identity_model(vs, policy, args, directory):
     # Overlapping filter instances and outstanding requests exercise the
     # allocator pool as instances are destroyed and resources are reacquired.
     held = make_output()
+    frame_reports = []
     for iteration in range(3):
         output = make_output()
         pending = [output.get_frame_async(n) for n in range(4)]
         held_pending = held.get_frame_async(iteration)
         for n, future in enumerate(pending):
             with future.result() as frame, source.get_frame(n) as expected:
+                planes = []
                 for plane in range(3):
                     actual = np.asarray(frame[plane])
                     if not np.isfinite(actual).all():
@@ -202,13 +218,22 @@ def check_identity_model(vs, policy, args, directory):
                             f"at={position}, actual={float(actual[position]):.9g}, "
                             f"expected={float(reference[position]):.9g}, dtype={actual.dtype}"
                         )
+                    planes.append({
+                        "sha256": hashlib.sha256(np.ascontiguousarray(actual).tobytes()).hexdigest(),
+                        "min": float(actual.min()),
+                        "max": float(actual.max()),
+                        "average": float(actual.mean()),
+                    })
+                if iteration == 0:
+                    frame_reports.append({"n": n, "planes": planes})
         held_pending.result().close()
         del output, pending, held_pending, future
         gc.collect()
     del held, source, base, plugin, core
     gc.collect()
     return {"version": version, "width": width, "height": height,
-            "frames_per_instance": 4, "iterations": 3, "exact_finite_identity": True}
+            "frames_per_instance": 4, "iterations": 3, "exact_finite_identity": True,
+            "frame_reports": frame_reports}
 
 
 def worker(args):
@@ -241,6 +266,8 @@ def worker(args):
 
 def parent(args):
     cases = ["multicore"]
+    if args.exercise_model:
+        cases += ["conv-explicit", "missing-model"]
     if args.exercise_ncnn:
         if args.namespace != "ncnn":
             raise ValueError("--exercise-ncnn requires --namespace ncnn")
@@ -261,6 +288,8 @@ def parent(args):
             command = [sys.executable, str(Path(__file__).resolve()), "--plugin", str(args.plugin),
                        "--namespace", args.namespace, "--worker", case, "--output", str(destination),
                        "--device-id", str(args.device_id)]
+            if args.trt_engine is not None:
+                command.extend(["--trt-engine", str(args.trt_engine)])
             for path in args.dll_dir:
                 command.extend(["--dll-dir", str(path)])
             try:
@@ -288,13 +317,17 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("verification-native-api4.json"))
     parser.add_argument("--exercise-ncnn", action="store_true")
     parser.add_argument("--exercise-ort", action="store_true")
+    parser.add_argument("--exercise-model", action="store_true", help="render an identity ONNX model and invalid-model error path")
     parser.add_argument("--device-id", type=int, default=0)
+    parser.add_argument("--trt-engine", type=Path)
     parser.add_argument("--dll-dir", type=Path, action="append", default=[])
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.plugin = args.plugin.resolve(strict=True)
     args.output = args.output.resolve()
+    if args.trt_engine is not None:
+        args.trt_engine = args.trt_engine.resolve(strict=True)
     args.dll_dir = [path.resolve(strict=True) for path in args.dll_dir]
     return worker(args) if args.worker else parent(args)
 

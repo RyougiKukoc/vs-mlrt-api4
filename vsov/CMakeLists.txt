@@ -46,6 +46,20 @@ set_target_properties(vsov PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 
+if (UNIX AND NOT APPLE)
+    # Linux release payloads keep the OpenVINO runtime beside vsov.so.
+    # Do not rely on a process-wide LD_LIBRARY_PATH at plugin load time.
+    set_target_properties(vsov PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN"
+    )
+elseif (APPLE)
+    set_target_properties(vsov PROPERTIES
+        BUILD_RPATH "@loader_path"
+        INSTALL_RPATH "@loader_path"
+    )
+endif()
+
 if (WIN32)
     if(WIN32_SHARED_OPENVINO)
         target_link_options(vsov PRIVATE "/DELAYLOAD:openvino.dll" "delayimp.lib")
