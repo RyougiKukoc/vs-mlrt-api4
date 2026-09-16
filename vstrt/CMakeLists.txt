@@ -126,6 +126,10 @@ else()
     target_link_directories(vstrt PRIVATE ${TENSORRT_LIBRARY_DIRS})
     if (WIN32)
         set(TENSORRT_RUNTIME_LIBRARY "nvinfer${TENSORRT_LIBRARY_SUFFIX}")
+    elseif (NOT TENSORRT_HOME)
+        # Existing distro/CI builds install the TensorRT development package
+        # system-wide and intentionally leave TENSORRT_HOME empty.
+        find_library(TENSORRT_RUNTIME_LIBRARY NAMES nvinfer REQUIRED)
     else()
         # Runtime-only TensorRT archives often omit the development symlink
         # libnvinfer.so. Resolve the versioned ELF directly for Linux fallback.
