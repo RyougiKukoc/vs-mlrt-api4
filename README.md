@@ -129,8 +129,7 @@ On Linux x86_64, the matching release asset names are
 `vs-mlrt-linux-x64-generic.zip`,
 `vs-mlrt-linux-x64-tensorrt-<variant>.zip`,
 `vs-mlrt-linux-x64-cuda-<variant>.zip`,
-`vs-mlrt-linux-x64-cudnn-<variant>.zip`, and
-`vs-mlrt-linux-x64-tensorrt-builder-<variant>.zip`. The CUDA assets overlay in
+`vs-mlrt-linux-x64-cudnn-<variant>.zip`. The CUDA assets overlay in
 that order after the generic asset. Every zip is rooted at `vsmlrt/` and
 contains ELF `.so` files only; the shared `models.zip` payload is installed for
 all three refs. Linux CUDA payloads currently carry the standard `vstrt`
@@ -203,8 +202,7 @@ hook:
   `vs-mlrt-windows-x64-cudnn-cu121.zip`, plus
   `vs-mlrt-linux-x64-tensorrt-cu121.zip`,
   `vs-mlrt-linux-x64-cuda-cu121.zip`,
-  `vs-mlrt-linux-x64-cudnn-cu121.zip`, and
-  `vs-mlrt-linux-x64-tensorrt-builder-cu121.zip`.
+  `vs-mlrt-linux-x64-cudnn-cu121.zip`.
 - `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`,
   `vs-mlrt-windows-x64-cuda-cu129.zip`,
   `vs-mlrt-windows-x64-cudnn-cu129.zip`,
@@ -214,8 +212,7 @@ hook:
   `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`, plus
   `vs-mlrt-linux-x64-tensorrt-cu129.zip`,
   `vs-mlrt-linux-x64-cuda-cu129.zip`,
-  `vs-mlrt-linux-x64-cudnn-cu129.zip`, and
-  `vs-mlrt-linux-x64-tensorrt-builder-cu129.zip`.
+  `vs-mlrt-linux-x64-cudnn-cu129.zip`.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN
