@@ -75,7 +75,7 @@ class CustomBuildHook(BuildHookInterface):
         self._prepare_plugin_dir(stage_dir)
         self._validate_plugin_dir(stage_dir, payload_tag)
         force_include[str(stage_dir)] = "vapoursynth/plugins/vsmlrt"
-        build_data["tag"] = self._wheel_tag()
+        build_data["tag"] = self._wheel_tag(payload_tag)
         mode = "Release asset" if used_prebuilt else "local native build"
         print(f"vs-mlrt: using {mode} for {payload_tag} on {platform.system()}", file=sys.stderr, flush=True)
 
@@ -93,15 +93,18 @@ class CustomBuildHook(BuildHookInterface):
     def _truthy(value: str | None) -> bool:
         return bool(value and value.strip().lower() not in {"", "0", "false", "no", "off"})
 
-    def _wheel_tag(self) -> str:
+    def _wheel_tag(self, payload_tag: str) -> str:
         override = os.environ.get("VSMLRT_PLATFORM_TAG")
         if override:
             return f"py3-none-{override}"
         if platform.system() == "Windows" and platform.machine().lower() in LINUX_MACHINE_NAMES:
             return "py3-none-win_amd64"
         if platform.system() == "Linux" and platform.machine().lower() in LINUX_MACHINE_NAMES:
-            # VapourSynth R79 itself establishes the end-to-end glibc floor.
-            return "py3-none-manylinux_2_27_x86_64"
+            # The generic OpenVINO build uses the VapourSynth R79 baseline.
+            # CUDA plugins compiled against current NVIDIA SDKs require
+            # GLIBC_2.34, verified from their final vstrt.so ELF metadata.
+            platform_tag = "manylinux_2_27_x86_64" if payload_tag == GENERIC_TAG else "manylinux_2_34_x86_64"
+            return f"py3-none-{platform_tag}"
         return "py3-none-any"
 
     def _detect_payload_tag(self) -> str:

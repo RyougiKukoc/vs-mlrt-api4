@@ -135,9 +135,12 @@ that order after the generic asset. Every zip is rooted at `vsmlrt/` and
 contains ELF `.so` files only; the shared `models.zip` payload is installed for
 all three refs. Linux CUDA payloads currently carry the standard `vstrt`
 backend; `vstrt_rtx` remains Windows-only until a separately validated Linux
-TensorRT-RTX runtime is available. Linux wheels use the VapourSynth R79 baseline tag
-`manylinux_2_27_x86_64`. This is an end-to-end runtime floor, even if an
-individual plugin's `readelf --version-info` output has an older GLIBC symbol.
+TensorRT-RTX runtime is available. Generic Linux wheels use the VapourSynth
+R79 baseline tag `manylinux_2_27_x86_64`. The CUDA 12.1 and 12.9 TensorRT
+plugins are tagged `manylinux_2_34_x86_64`: `readelf --version-info` on their
+final `vstrt.so` records `GLIBC_2.34`, so presenting those SDK-bound wheels as
+`manylinux_2_27` would be false. The VapourSynth runtime remains an additional
+end-to-end compatibility requirement.
 
 The `vsort`/ONNX Runtime backend was migrated to API4 in source, but this fork
 does not publish it in the `generic` payload. For our target Windows users,
