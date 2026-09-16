@@ -173,9 +173,11 @@ For each refreshed CUDA Release slot:
    inference rather than just DLL discovery.
 4. Treat `cu121` engine execution as a separate gate when a matching TensorRT
    8.6 engine compiler is available. The runtime release deliberately excludes
-   build-only `trtexec`, so its release check still must prove plugin loading,
-   version reporting, and GPU device enumeration without adding build tools to
-   the user payload.
+   both build-only `trtexec` and `nvinfer_builder_resource.dll`; attempting
+   `createInferBuilder_INTERNAL` from the runtime payload must fail at that
+   missing resource. Its release check therefore proves plugin loading, version
+   reporting, and GPU device enumeration without adding build resources to the
+   user payload.
 
 These are CUDA runtime/package checks, not an API3/API4 behavior comparison.
 Record the driver, GPU, runtime versions, Release digests, and any engine/frame
