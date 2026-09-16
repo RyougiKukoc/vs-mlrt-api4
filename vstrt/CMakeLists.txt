@@ -53,6 +53,14 @@ if (USE_TRT_RTX)
             BUILD_RPATH "$ORIGIN"
             INSTALL_RPATH "$ORIGIN"
         )
+        # NVIDIA's current Linux SDK requires a newer libstdc++ than the R79
+        # validation image. Keep that runtime private to the plugin so a
+        # previously loaded host libstdc++ cannot satisfy its symbols.
+        target_link_options(vstrt_rtx PRIVATE
+            -static-libstdc++
+            -static-libgcc
+            -Wl,--exclude-libs,ALL
+        )
     elseif (APPLE)
         set_target_properties(vstrt_rtx PROPERTIES
             BUILD_RPATH "@loader_path"
@@ -115,6 +123,13 @@ else()
         set_target_properties(vstrt PROPERTIES
             BUILD_RPATH "$ORIGIN"
             INSTALL_RPATH "$ORIGIN"
+        )
+        # See the matching vstrt_rtx options above. Do not expose static C++
+        # archive symbols into VapourSynth/Python's process-wide namespace.
+        target_link_options(vstrt PRIVATE
+            -static-libstdc++
+            -static-libgcc
+            -Wl,--exclude-libs,ALL
         )
     elseif (APPLE)
         set_target_properties(vstrt PROPERTIES
