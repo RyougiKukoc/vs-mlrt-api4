@@ -290,7 +290,7 @@ jobs:
       - name: Package generic payload
         shell: pwsh
         run: |
-          7z a -tzip -mx=9 "vs-mlrt-windows-x64-generic.zip" .\payload-generic\*
+          7z a -tzip -mx=0 "vs-mlrt-windows-x64-generic.zip" .\payload-generic\*
           $asset = Get-Item "vs-mlrt-windows-x64-generic.zip"
           if ($asset.Length -ge 2147483648) {
             throw "Release asset exceeds GitHub's 2 GiB limit: $($asset.Name) ($($asset.Length) bytes)"
