@@ -17,6 +17,7 @@ DEFAULT_API4_PYTHON = Path(r"F:\vpy-api4\vapoursynth-portable-R77\python.exe")
 DEFAULT_API3_PYTHON = Path(r"C:\green\WPy64-313110\python\python.exe")
 
 BACKENDS = ("ncnn", "ov_cpu", "ov_gpu", "trt")
+SUPPORTED_BACKENDS = (*BACKENDS, "trt_rtx")
 MODELS = ("dpir", "waifu2x_cunet_noise3", "animejanaiV3_HD_L1")
 
 
@@ -292,8 +293,8 @@ def run_parent(args: argparse.Namespace) -> int:
         "cases": [],
     }
 
-    for backend in BACKENDS:
-        for model in MODELS:
+    for backend in getattr(args, "backends", BACKENDS):
+        for model in getattr(args, "models", MODELS):
             print(f"== {backend} / {model} ==", flush=True)
             reports = {}
             for env_name, python in envs.items():
@@ -358,6 +359,15 @@ def backend_object(vsmlrt, backend: str, engine_folder: Path):
             device_id=0,
             engine_folder=str(engine_folder),
         )
+    if backend == "trt_rtx":
+        engine_folder.mkdir(parents=True, exist_ok=True)
+        return vsmlrt.BackendV2.TRT_RTX(
+            fp16=False,
+            use_cuda_graph=False,
+            static_shape=True,
+            device_id=0,
+            engine_folder=str(engine_folder),
+        )
     raise ValueError(f"unknown backend: {backend}")
 
 
@@ -413,6 +423,8 @@ def version_map(core, namespace: str) -> dict:
         namespace = "ncnn"
     if namespace == "trt":
         namespace = "trt"
+    if namespace == "trt_rtx":
+        namespace = "trt_rtx"
     if not hasattr(core, namespace):
         return {"available": False}
     plugin = getattr(core, namespace)
@@ -519,7 +531,7 @@ def run_worker(args: argparse.Namespace) -> int:
     return 0
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compare API3/R73 and API4/R77 installed vs-mlrt backend outputs.",
     )
@@ -534,12 +546,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=64)
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--atol", type=float, default=1e-5)
+    parser.add_argument("--backends", nargs="+", choices=SUPPORTED_BACKENDS, default=list(BACKENDS))
+    parser.add_argument("--models", nargs="+", choices=MODELS, default=list(MODELS))
 
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--env-name", choices=("api3", "api4"), help=argparse.SUPPRESS)
-    parser.add_argument("--backend", choices=BACKENDS, help=argparse.SUPPRESS)
+    parser.add_argument("--backend", choices=SUPPORTED_BACKENDS, help=argparse.SUPPRESS)
     parser.add_argument("--model", choices=MODELS, help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not math.isfinite(args.atol) or args.atol < 0:
         parser.error("--atol must be finite and non-negative")
     if args.width <= 0 or args.height <= 0 or args.timeout <= 0:

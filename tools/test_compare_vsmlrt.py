@@ -141,6 +141,11 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("finite and non-negative", result.stderr)
 
+    def test_trt_rtx_is_an_explicitly_supported_backend(self):
+        args = compare.parse_args(["--backends", "trt_rtx", "--models", "dpir"])
+        self.assertEqual(args.backends, ["trt_rtx"])
+        self.assertEqual(args.models, ["dpir"])
+
 
 if __name__ == "__main__":
     unittest.main()

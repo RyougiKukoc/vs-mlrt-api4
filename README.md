@@ -206,6 +206,35 @@ the `generic` Release asset.
 Each case renders a real frame and compares contiguous float32 planes, rather
 than treating model creation or plugin version reporting as inference evidence.
 
+## Accelerator Backend Evidence
+
+The same RTX 3090 Ti (SM 8.6, driver API 13040) was used for the CUDA cases.
+The standard TensorRT and TensorRT-RTX lines were kept in isolated API3 and
+cu129 API4 payload directories.
+
+- `BackendV2.OV_GPU()` was invoked with AnimeJanai on API3 Windows, API4
+  Windows, and API4 Linux. All three correctly report no supported OpenVINO
+  GPU device. This host has NVIDIA hardware only; OpenVINO's GPU plugin needs
+  a compatible Intel GPU. The Linux check was repeated with an OpenCL dispatch
+  loader and PoCL ICD, so the result is a device capability boundary rather
+  than a missing-loader claim.
+- Standard TRT API3 built an RTX 3090 Ti engine for AnimeJanai with the
+  baseline TensorRT 10.14.1 `trtexec` and rendered a 128x128 RGBS frame. The
+  cu129 API4 user payload deliberately excludes build resources; a separate
+  full TensorRT 11.1 builder created a static 1x1x16x16 identity engine, then
+  the extracted `vstrt.so` runtime payload loaded it and rendered an exact
+  16x16 GrayS identity frame (`3550e6853d980fa61e6e0c9b0acb00e60f1594784ec83b46d5e977d0080f6f23`).
+- TensorRT-RTX built isolated engines and rendered all three model cases with
+  the baseline 1.1.1 and cu129 API4 1.5.0 runtimes. AnimeJanai matched bytes.
+  CUNet noise3 had `max_abs=0.0005944371223449707` and DPIR had
+  `max_abs=0.00029768049716949463`; both are finite, same-shaped GPU outputs
+  from distinct RTX engine/compiler versions and are recorded as numerical
+  differences, not strict matches.
+
+Do not add `trtexec` or builder resource DLLs to the user runtime payload to
+make a model-building convenience path work. Keep builder and runtime evidence
+separate, and always request a frame after loading a generated engine.
+
 ## Release Asset Layout
 
 These Release tags remain as binary asset slots consumed by the root build
