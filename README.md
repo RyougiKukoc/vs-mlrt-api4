@@ -189,6 +189,23 @@ git fetch upstream tag v16.2.test1
 git diff 9e4d0c9dbbcaa28275772d30520330e69a58307c..HEAD
 ```
 
+## Paired Model Evidence
+
+The API3 R73 Windows baseline and the `generic` API4 Release payloads were
+compared with the same current `scripts/vsmlrt.py` wrapper, deterministic
+64x64 `RGBS` input, and `BackendV2.OV_CPU()`. The three model files were
+copied into extracted test payload directories only; they are not additions to
+the `generic` Release asset.
+
+| Wrapper case | Model file | SHA-256 | Output | Result |
+| --- | --- | --- | --- | --- |
+| `RealESRGANModel.animejanaiV3_HD_L1` | `RealESRGANv2/animejanaiV3-HD-L1.onnx` | `d328ff0b2fc36145af167093d951ac6fd577e8be26fe0e48764557ac94e03877` | 128x128 RGBS | API3 Windows, API4 Windows, and API4 Linux bytes match. |
+| `Waifu2xModel.cunet`, noise 3, scale 1 | `waifu2x/cunet/noise3_model.onnx` | `1c2439403f8f2c6ac5f95d9be780d257e910d17dd89d79b41da0fe1b7ad11b21` | 64x64 RGBS | API3 Windows, API4 Windows, and API4 Linux bytes match. |
+| `DPIRModel.drunet_color`, strength 5 | `dpir/drunet_color.onnx` | `ae6af55252e268e9dd3f567e66b81227c98fd2846b3cb7febd9d0a6bbabb4617` | 64x64 RGBS | API3/API4 Windows bytes match; Linux OpenVINO CPU differs by at most `4.172325134277344e-07` (`mean_abs=5.6869614202999706e-08`), below the `1e-5` comparison limit. |
+
+Each case renders a real frame and compares contiguous float32 planes, rather
+than treating model creation or plugin version reporting as inference evidence.
+
 ## Release Asset Layout
 
 These Release tags remain as binary asset slots consumed by the root build
