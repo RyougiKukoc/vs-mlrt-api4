@@ -60,6 +60,14 @@ Vulkan/NCNN binary because its Vulkan driver requirements are materially less
 portable than the OpenVINO CPU payload. Windows continues to ship both NCNN and
 OpenVINO in `generic`.
 
+The wrapper resolves helper executables in this order: an explicit
+`VSMLRT_TRTEXEC_PATH`, `VSMLRT_MIGRAPHX_DRIVER_PATH`, or
+`VSMLRT_TENSORRT_RTX_PATH` override; the selected package payload; then the
+host `PATH`. It preserves the parent process environment when launching those
+tools and adds package-local runtime directories only for package-local tools.
+This keeps Linux runtime wheels free of TensorRT builder resources while
+allowing a container or system TensorRT installation to provide `trtexec`.
+
 Set `VSMLRT_FORCE_BUILD=1` to bypass Release assets. The fallback invokes the
 repository CMake projects and requires a compatible VapourSynth wheel SDK plus
 the selected backend SDKs. It prepends the installed wheel's
@@ -328,6 +336,15 @@ inference still needs a real CUDA machine.
 For `generic`, GitHub Actions installs the Vulkan SDK during smoke tests so
 `vsncnn.dll` can load on the hosted runner. Real ncnn inference still depends on
 the user's installed GPU driver and Vulkan support.
+
+On a GPU host with a full TensorRT builder available on `PATH`, run:
+
+```text
+python tools/smoke_trtexec.py
+```
+
+It builds a small engine through the public `vsmlrt.trtexec()` API and checks
+that the wrapper resolved the same executable as `PATH`.
 
 ## Useful Overrides
 

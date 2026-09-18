@@ -24,6 +24,7 @@ import math
 import os
 import os.path
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -82,10 +83,14 @@ def _plugin_version_tuple(plugin_name: str, key: str, default: str = "0.0.0") ->
     return _version_tuple(value)
 
 
+_NATIVE_PLUGIN_BASENAMES = ("vsncnn", "vsov", "vsort", "vstrt", "vstrt_rtx", "vsmigx")
+
+
 def get_plugins_path() -> str:
     package_plugins_root = os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins")
     package_plugins_path = os.path.join(package_plugins_root, "vsmlrt")
-    known_plugin_files = ("vsncnn.dll", "vsov.dll", "vsort.dll", "vstrt.dll", "vstrt_rtx.dll")
+    native_suffix = {"Windows": ".dll", "Linux": ".so", "Darwin": ".dylib"}.get(platform.system(), ".so")
+    known_plugin_files = tuple(f"{name}{native_suffix}" for name in _NATIVE_PLUGIN_BASENAMES)
     if (
         os.path.isfile(os.path.join(package_plugins_path, "manifest.vs"))
         or any(os.path.isfile(os.path.join(package_plugins_path, name)) for name in known_plugin_files)
@@ -114,36 +119,126 @@ def _get_plugin_path(plugin_name: str) -> typing.Optional[str]:
 
 
 def _path_variants(path: str) -> typing.Iterator[str]:
-    yield path
     if platform.system() == "Windows" and not os.path.splitext(path)[1]:
         yield f"{path}.exe"
+    yield path
+
+
+def _first_existing_file(path: str) -> typing.Optional[str]:
+    for variant in _path_variants(path):
+        if os.path.isfile(variant):
+            return variant
+    return None
+
+
+def _environment_tool_path(variable: str) -> typing.Optional[str]:
+    configured = os.environ.get(variable)
+    if not configured:
+        return None
+    return _first_existing_file(configured) or next(_path_variants(configured))
+
+
+def _path_tool_path(name: str) -> typing.Optional[str]:
+    for variant in _path_variants(name):
+        found = shutil.which(variant)
+        if found:
+            return found
+    return None
 
 
 def _get_payload_path(
     plugin_names: typing.Sequence[str],
-    package_names: typing.Sequence[str],
     *parts: str,
+    environment_variable: str,
 ) -> str:
+    configured = _environment_tool_path(environment_variable)
+    if configured is not None:
+        return configured
+
     for plugin_name in plugin_names:
         plugin_path = _get_plugin_path(plugin_name)
         if plugin_path is None:
             continue
         candidate = os.path.join(plugin_path, *parts)
-        for variant in _path_variants(candidate):
-            if os.path.exists(variant):
-                return variant
+        found = _first_existing_file(candidate)
+        if found is not None:
+            return found
 
     package_plugins_root = os.path.join(os.path.dirname(__file__), "vapoursynth", "plugins")
     candidate = os.path.join(package_plugins_root, "vsmlrt", *parts)
-    for variant in _path_variants(candidate):
-        if os.path.exists(variant):
-            return variant
+    found = _first_existing_file(candidate)
+    if found is not None:
+        return found
 
     fallback = os.path.join(plugins_path, *parts)
-    for variant in _path_variants(fallback):
-        if os.path.exists(variant):
-            return variant
-    return fallback
+    found = _first_existing_file(fallback)
+    if found is not None:
+        return found
+
+    found = _path_tool_path(parts[-1])
+    if found is not None:
+        return found
+    return next(_path_variants(fallback))
+
+
+def _tool_library_paths(executable: str) -> typing.List[str]:
+    tool_dir = os.path.abspath(os.path.dirname(executable))
+    plugin_dir = os.path.abspath(plugins_path)
+    try:
+        packaged_tool = (
+            os.path.commonpath((os.path.normcase(tool_dir), os.path.normcase(plugin_dir)))
+            == os.path.normcase(plugin_dir)
+        )
+    except ValueError:
+        packaged_tool = False
+    if packaged_tool:
+        return [tool_dir, plugin_dir]
+
+    tool_root = os.path.dirname(tool_dir)
+    return [tool_dir, os.path.join(tool_root, "lib")]
+
+
+def _prepend_environment_path(env: typing.Dict[str, str], key: str, paths: typing.Iterable[str]) -> None:
+    actual_key = next((name for name in env if name.upper() == key.upper()), key)
+    entries = []
+    for path in paths:
+        if path and path not in entries:
+            entries.append(path)
+    existing = env.get(actual_key)
+    if existing:
+        entries.extend(path for path in existing.split(os.pathsep) if path not in entries)
+    env[actual_key] = os.pathsep.join(entries)
+
+
+def _tool_environment(
+    executable: str,
+    custom_env: typing.Mapping[str, str],
+    *,
+    cuda: bool,
+) -> typing.Dict[str, str]:
+    env = os.environ.copy()
+    env.update(custom_env)
+    library_paths = _tool_library_paths(executable)
+    _prepend_environment_path(env, "PATH", library_paths)
+    if platform.system() == "Windows":
+        pass
+    elif platform.system() == "Darwin":
+        _prepend_environment_path(env, "DYLD_LIBRARY_PATH", library_paths)
+    else:
+        _prepend_environment_path(env, "LD_LIBRARY_PATH", library_paths)
+    if cuda:
+        env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    return env
+
+
+def _require_tool(path: str, tool_name: str, environment_variable: str) -> None:
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"{tool_name} was not found at {path!r}. Set {environment_variable} to an executable path "
+            f"or add {tool_name} to PATH."
+        )
+    if platform.system() != "Windows" and not os.access(path, os.X_OK):
+        raise PermissionError(f"{tool_name} is not executable: {path!r}")
 
 
 def get_models_path() -> str:
@@ -157,9 +252,15 @@ def get_models_path() -> str:
 
 
 plugins_path: str = get_plugins_path()
-trtexec_path: str = _get_payload_path(("trt", "trt_rtx"), ("vsmlrt",), "vsmlrt-cuda", "trtexec")
-migraphx_driver_path: str = _get_payload_path(("migx",), ("vsmlrt-hip",), "vsmlrt-hip", "migraphx-driver")
-tensorrt_rtx_path: str = _get_payload_path(("trt_rtx", "trt"), ("vsmlrt",), "vsmlrt-cuda", "tensorrt_rtx")
+trtexec_path: str = _get_payload_path(
+    ("trt", "trt_rtx"), "vsmlrt-cuda", "trtexec", environment_variable="VSMLRT_TRTEXEC_PATH"
+)
+migraphx_driver_path: str = _get_payload_path(
+    ("migx",), "vsmlrt-hip", "migraphx-driver", environment_variable="VSMLRT_MIGRAPHX_DRIVER_PATH"
+)
+tensorrt_rtx_path: str = _get_payload_path(
+    ("trt_rtx", "trt"), "vsmlrt-cuda", "tensorrt_rtx", environment_variable="VSMLRT_TENSORRT_RTX_PATH"
+)
 models_path: str = get_models_path()
 
 
@@ -2221,6 +2322,8 @@ def trtexec(
         )
         network_path = target_network_path
 
+    _require_tool(trtexec_path, "trtexec", "VSMLRT_TRTEXEC_PATH")
+
     args = [
         trtexec_path,
         f"--onnx={network_path}",
@@ -2348,14 +2451,14 @@ def trtexec(
 
     args.extend(custom_args)
 
+    env = _tool_environment(trtexec_path, custom_env, cuda=True)
+
     if log:
         env_key = "TRTEXEC_LOG_FILE"
-        prev_env_value = os.environ.get(env_key)
+        prev_env_value = env.get(env_key)
 
         if prev_env_value is not None and len(prev_env_value) > 0:
             # env_key has been set, no extra action
-            env = {env_key: prev_env_value, "CUDA_MODULE_LOADING": "LAZY"}
-            env.update(**custom_env)
             subprocess.run(args, env=env, check=True, stdout=sys.stderr)
         else:
             time_str = time.strftime('%y%m%d_%H%M%S', time.localtime())
@@ -2365,8 +2468,7 @@ def trtexec(
                 f"trtexec_{time_str}.log"
             )
 
-            env = {env_key: log_filename, "CUDA_MODULE_LOADING": "LAZY"}
-            env.update(**custom_env)
+            env[env_key] = log_filename
 
             completed_process = subprocess.run(args, env=env, check=False, stdout=sys.stderr)
 
@@ -2382,8 +2484,6 @@ def trtexec(
                 else:
                     raise RuntimeError(f"trtexec execution fails but no log is found")
     else:
-        env = {"CUDA_MODULE_LOADING": "LAZY"}
-        env.update(**custom_env)
         subprocess.run(args, env=env, check=True, stdout=sys.stderr)
 
     return engine_path
@@ -2487,6 +2587,8 @@ def migraphx_driver(
     if device_id != 0:
         raise ValueError('"device_id" must be 0')
 
+    _require_tool(migraphx_driver_path, "migraphx-driver", "VSMLRT_MIGRAPHX_DRIVER_PATH")
+
     args = [
         migraphx_driver_path,
         "compile",
@@ -2515,7 +2617,12 @@ def migraphx_driver(
 
     args.extend(custom_args)
 
-    subprocess.run(args, env=custom_env, check=True, stdout=sys.stderr)
+    subprocess.run(
+        args,
+        env=_tool_environment(migraphx_driver_path, custom_env, cuda=False),
+        check=True,
+        stdout=sys.stderr,
+    )
 
     return mxr_path
 
@@ -2632,6 +2739,8 @@ def tensorrt_rtx(
             # do not consider alternative path when the engine_folder is given
             raise PermissionError(f"{engine_path} is not writable")
 
+    _require_tool(tensorrt_rtx_path, "tensorrt_rtx", "VSMLRT_TENSORRT_RTX_PATH")
+
     args = [
         tensorrt_rtx_path,
         f"--onnx={network_path}",
@@ -2694,8 +2803,7 @@ def tensorrt_rtx(
 
     args.extend(custom_args)
 
-    env = {"CUDA_MODULE_LOADING": "LAZY"}
-    env.update(**custom_env)
+    env = _tool_environment(tensorrt_rtx_path, custom_env, cuda=True)
     subprocess.run(args, env=env, check=True, stdout=sys.stderr)
 
     return engine_path
