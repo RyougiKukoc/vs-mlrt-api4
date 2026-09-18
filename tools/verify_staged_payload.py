@@ -64,6 +64,7 @@ def staged_names(variant: str) -> list[str]:
     if variant == "generic":
         return ["vs-mlrt-windows-x64-generic.zip"]
     result = [f"vs-mlrt-windows-x64-{part}-{variant}.zip" for part in ["tensorrt", "cuda", "cudnn"]]
+    result.append(f"vs-mlrt-windows-x64-tensorrt-builder-{variant}.zip")
     if variant == "cu129":
         result.extend(f"vs-mlrt-windows-x64-tensorrt-{part}-cu129.zip" for part in ["core", "plugin", "extra", "rtx"])
     return result

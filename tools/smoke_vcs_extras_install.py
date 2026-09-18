@@ -565,6 +565,8 @@ def main() -> None:
                 cuda_prefix / "vsmlrt-cuda" / "cublas64_12.dll",
                 cuda_prefix / "vsmlrt-cuda" / "cublasLt64_12.dll",
                 cuda_prefix / "vsmlrt-cuda" / "cudart64_12.dll",
+                cuda_prefix / "vsmlrt-cuda" / "trtexec.exe",
+                cuda_prefix / "vsmlrt-cuda" / "trtexec-build.json",
             ],
         )
         if cuda_flavor == "cu129":
@@ -596,16 +598,9 @@ def main() -> None:
             raise SystemExit("Missing installed files matching: " + ", ".join(missing_globs))
 
         cuda_dir = cuda_paths[cuda_prefix / "vstrt.dll"].parent / "vsmlrt-cuda"
+        expected_trtexec = cuda_dir / "trtexec.exe"
         if cuda_flavor == "cu129":
             expected_tensorrt_rtx = cuda_dir / "tensorrt_rtx.exe"
-        forbid_paths(
-            roots,
-            [
-                cuda_prefix / "vsmlrt-cuda" / "trtexec.exe",
-                cuda_prefix / "vsmlrt-cuda" / "trtexec-build.json",
-            ],
-            "Runtime payload unexpectedly contains build-only TensorRT tools",
-        )
     else:
         forbid_paths(
             roots,

@@ -25,6 +25,12 @@ def command(args: list[str], *, env: dict[str, str]) -> None:
 
 
 def prepend_pkgconfig(env: dict[str, str]) -> Path:
+    include_override = env.get("VSMLRT_VAPOURSYNTH_INCLUDE_DIRECTORY")
+    if include_override:
+        root = Path(include_override).expanduser().resolve()
+        if not (root / "VapourSynth4.h").is_file():
+            raise RuntimeError(f"VapourSynth4.h was not found beneath {root}")
+        return root
     override = env.get("VSMLRT_VAPOURSYNTH_ROOT")
     if override:
         wheel_root = Path(override).expanduser().resolve()
@@ -69,11 +75,20 @@ def roots_from_env(env: dict[str, str], *extras: Path | None) -> list[Path]:
     return list(dict.fromkeys(roots))
 
 
-def copy_runtime_family(stage: Path, roots: list[Path], prefixes: tuple[str, ...]) -> None:
+def required_package_dir(env: dict[str, str], name: str, alias: str) -> Path:
+    value = env.get(name) or env.get(alias)
+    if not value:
+        raise RuntimeError(f"{name} is required for the Linux source fallback")
+    return Path(value).expanduser().resolve()
+
+
+def copy_runtime_family(stage: Path, roots: list[Path], prefixes: tuple[str, ...], *, exclude_builder=False) -> None:
     for root in roots:
         for pattern in ("*.so*", "*.dylib*"):
             for source in root.rglob(pattern):
                 if not source.is_file() or source.is_symlink() or not source.name.startswith(prefixes):
+                    continue
+                if exclude_builder and "builder_resource" in source.name:
                     continue
                 destination = stage / source.name
                 if not destination.exists():
@@ -102,18 +117,23 @@ def write_elf_soname_aliases(stage: Path) -> None:
 
 def copy_runtime(stage: Path, roots: list[Path], variant: str) -> None:
     if variant == "generic":
-        copy_runtime_family(stage, roots, ("libopenvino", "libtbb", "libonnx", "libprotobuf"))
+        copy_runtime_family(stage, roots, ("libopenvino", "libtbb", "libonnx", "libprotobuf", "libncnn"))
     else:
         copy_runtime_family(
             stage,
             roots,
-            ("libnvinfer", "libnvonnxparser", "libcudnn", "libcublas", "libcudart", "libnvrtc", "libnvJitLink", "libtensorrt_rtx"),
+            ("libnvinfer", "libnvonnxparser", "libnvparsers", "libcudnn", "libcublas", "libcudart", "libcufft", "libnvblas", "libnvrtc", "libnvJitLink", "libnvvm", "libtensorrt_rtx"),
+            exclude_builder=True,
         )
+
+
+def copy_builder_resources(stage: Path, roots: list[Path]) -> None:
+    copy_runtime_family(stage, roots, ("libnvinfer_builder_resource",))
 
 
 def write_manifest(stage: Path) -> None:
     suffix = ".dylib" if sys.platform == "darwin" else ".so"
-    plugins = [name for name in ("vsov", "vstrt", "vstrt_rtx") if (stage / f"{name}{suffix}").is_file()]
+    plugins = [name for name in ("vsncnn", "vsov", "vstrt", "vstrt_rtx") if (stage / f"{name}{suffix}").is_file()]
     (stage / "manifest.vs").write_text("[VapourSynth Manifest V1]\n" + "\n".join(plugins) + "\n", encoding="ascii")
 
 
@@ -138,12 +158,18 @@ def main() -> None:
     # OpenVINO backend as well as TensorRT. Build it first for every variant.
     openvino_dir_raw = env.get("VSMLRT_OPENVINO_DIR") or env.get("OpenVINO_DIR")
     openvino_dir = Path(openvino_dir_raw).expanduser().resolve() if openvino_dir_raw else None
+    ncnn_dir = required_package_dir(env, "VSMLRT_NCNN_DIR", "ncnn_DIR")
+    onnx_dir = required_package_dir(env, "VSMLRT_ONNX_DIR", "ONNX_DIR")
+    protobuf_dir = required_package_dir(env, "VSMLRT_PROTOBUF_DIR", "protobuf_DIR")
+    ncnn_args = [f"-DVAPOURSYNTH_INCLUDE_DIRECTORY={headers}", f"-Dncnn_DIR={ncnn_dir}", f"-DONNX_DIR={onnx_dir}", f"-Dprotobuf_DIR={protobuf_dir}"]
+    cmake_build(ROOT / "vsncnn", build_root / "vsncnn", build_root / "install-vsncnn", ncnn_args, env)
+    shutil.copy2(find_library(build_root / "install-vsncnn", "libvsncnn"), stage / f"vsncnn{native_suffix}")
     generic_args = [f"-DVAPOURSYNTH_INCLUDE_DIRECTORY={headers}"]
     if openvino_dir:
         generic_args.append(f"-DOpenVINO_DIR={openvino_dir}")
     cmake_build(ROOT / "vsov", build_root / "vsov", build_root / "install-vsov", generic_args, env)
     shutil.copy2(find_library(build_root / "install-vsov", "libvsov"), stage / f"vsov{native_suffix}")
-    copy_runtime(stage, roots_from_env(env, openvino_dir.parent if openvino_dir else None), "generic")
+    copy_runtime(stage, roots_from_env(env, openvino_dir.parent if openvino_dir else None, ncnn_dir.parent, onnx_dir.parent, protobuf_dir.parent), "generic")
 
     if args.variant != "generic":
         trt_home_raw = env.get("VSMLRT_TENSORRT_HOME") or env.get("TENSORRT_HOME")
@@ -151,13 +177,15 @@ def main() -> None:
             raise RuntimeError("VSMLRT_TENSORRT_HOME is required for CUDA source fallback.")
         trt_home = Path(trt_home_raw).expanduser().resolve()
         cuda_root = Path(env["CUDAToolkit_ROOT"]).expanduser().resolve() if env.get("CUDAToolkit_ROOT") else None
-        cmake_args = [f"-DVAPOURSYNTH_INCLUDE_DIRECTORY={headers}", f"-DTENSORRT_HOME={trt_home}"]
+        cmake_args = [f"-DVAPOURSYNTH_INCLUDE_DIRECTORY={headers}", f"-DTENSORRT_HOME={trt_home}", "-DUSE_NVINFER_PLUGIN=ON"]
         if cuda_root:
             cmake_args.append(f"-DCUDAToolkit_ROOT={cuda_root}")
         cmake_build(ROOT / "vstrt", build_root / "vstrt", build_root / "install-vstrt", cmake_args, env)
         shutil.copy2(find_library(build_root / "install-vstrt", "libvstrt"), stage / f"vstrt{native_suffix}")
         runtime_roots = roots_from_env(env, trt_home / "lib", cuda_root / "lib64" if cuda_root else None)
-        if args.variant == "cu129" and env.get("VSMLRT_TENSORRT_RTX_HOME"):
+        if args.variant == "cu129":
+            if not env.get("VSMLRT_TENSORRT_RTX_HOME"):
+                raise RuntimeError("VSMLRT_TENSORRT_RTX_HOME is required for Linux cu129")
             rtx_home = Path(env["VSMLRT_TENSORRT_RTX_HOME"]).expanduser().resolve()
             cmake_build(
                 ROOT / "vstrt",
@@ -169,6 +197,19 @@ def main() -> None:
             shutil.copy2(find_library(build_root / "install-vstrt-rtx", "libvstrt_rtx"), stage / f"vstrt_rtx{native_suffix}")
             runtime_roots.extend(roots_from_env(env, rtx_home / "lib"))
         copy_runtime(stage, runtime_roots, args.variant)
+        copy_builder_resources(stage, runtime_roots)
+        for env_name, filename in (("VSMLRT_TRTEXEC_PATH", "trtexec"), ("VSMLRT_TRTEXEC_BUILD_METADATA", "trtexec-build.json")):
+            value = env.get(env_name)
+            if not value:
+                raise RuntimeError(f"{env_name} is required for Linux CUDA source fallback")
+            helper_dir = stage / "vsmlrt-cuda"
+            helper_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(Path(value).expanduser().resolve(), helper_dir / filename)
+        if args.variant == "cu129":
+            value = env.get("VSMLRT_TENSORRT_RTX_PATH")
+            if not value:
+                raise RuntimeError("VSMLRT_TENSORRT_RTX_PATH is required for Linux cu129")
+            shutil.copy2(Path(value).expanduser().resolve(), stage / "vsmlrt-cuda" / "tensorrt_rtx")
     if sys.platform == "linux":
         write_elf_soname_aliases(stage)
     write_manifest(stage)

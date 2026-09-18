@@ -16,6 +16,10 @@ spec.loader.exec_module(verify)
 
 
 class PayloadTests(unittest.TestCase):
+    def test_cuda_variants_include_builder_asset(self):
+        self.assertIn("vs-mlrt-windows-x64-tensorrt-builder-cu121.zip", verify.staged_names("cu121"))
+        self.assertIn("vs-mlrt-windows-x64-tensorrt-builder-cu129.zip", verify.staged_names("cu129"))
+
     def test_installed_bytes_and_intentional_openvino_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

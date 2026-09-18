@@ -15,7 +15,7 @@ def main() -> None:
     parser.add_argument("--bin-dir", type=Path, required=True)
     parser.add_argument("--runtime-dir", type=Path, action="append", default=[])
     args = parser.parse_args()
-    exe = (args.bin_dir / "trtexec.exe").resolve()
+    exe = (args.bin_dir / ("trtexec.exe" if os.name == "nt" else "trtexec")).resolve()
     provenance = json.loads((exe.parent / "trtexec-build.json").read_text())
     if provenance["kind"] != "vsmlrt-custom" or provenance["sha256"] != hashlib.sha256(exe.read_bytes()).hexdigest():
         raise RuntimeError("Custom trtexec provenance does not match executable")
@@ -31,7 +31,8 @@ def main() -> None:
         result = subprocess.run([str(exe), "--help"], env=env, capture_output=True, timeout=60)
         if result.returncode or not log.is_file() or b"--onnx" not in log.read_bytes():
             raise RuntimeError(f"Custom trtexec help/log smoke failed: {result.returncode}\n{result.stdout!r}\n{result.stderr!r}")
-        subprocess.run([str(exe.parent / "trtexec_filelock_smoke.exe"), str(directory / "\u7f13\u5b58.cache")], env=env, check=True, timeout=60)
+        filelock = "trtexec_filelock_smoke.exe" if os.name == "nt" else "trtexec_filelock_smoke"
+        subprocess.run([str(exe.parent / filelock), str(directory / "\u7f13\u5b58.cache")], env=env, check=True, timeout=60)
     print("Custom trtexec: --help, Unicode/long log path, and file-lock cleanup passed")
 
 

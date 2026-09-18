@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -32,15 +33,16 @@ def prepare(source: Path, sdk: Path, version: str) -> None:
     shutil.copyfile(local / "CMakeLists-pinned.txt", destination / "CMakeLists.txt")
     for name in ["logfile.cpp", "filelock_smoke.cpp", "trtexec.manifest"]:
         shutil.copyfile(local / name, destination / name)
-    lock_file = source / ("samples/common/common.h" if major == "8" else "shared/utils/fileLock.cpp")
-    text = lock_file.read_text(encoding="utf-8")
-    old = "CreateFileA(lockFileName.c_str(), GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, 0, NULL)"
-    new = "CreateFileW(std::filesystem::u8path(lockFileName).c_str(), GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE | FILE_ATTRIBUTE_TEMPORARY, NULL)"
-    if text.count(old) == 1:
-        text = "#include <filesystem>\n" + text.replace(old, new)
-        lock_file.write_text(text, encoding="utf-8", newline="\n")
-    elif text.count(new) != 1:
-        raise RuntimeError(f"{lock_file}: expected exactly one known Windows file-lock operation")
+    if os.name == "nt":
+        lock_file = source / ("samples/common/common.h" if major == "8" else "shared/utils/fileLock.cpp")
+        text = lock_file.read_text(encoding="utf-8")
+        old = "CreateFileA(lockFileName.c_str(), GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, 0, NULL)"
+        new = "CreateFileW(std::filesystem::u8path(lockFileName).c_str(), GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE | FILE_ATTRIBUTE_TEMPORARY, NULL)"
+        if text.count(old) == 1:
+            text = "#include <filesystem>\n" + text.replace(old, new)
+            lock_file.write_text(text, encoding="utf-8", newline="\n")
+        elif text.count(new) != 1:
+            raise RuntimeError(f"{lock_file}: expected exactly one known Windows file-lock operation")
     for name in ["trtexec.cpp", "logfile.cpp", "filelock_smoke.cpp"]:
         if not (destination / name).is_file():
             raise RuntimeError(f"Missing matching OSS source: {name}")
@@ -68,14 +70,15 @@ def main() -> None:
     cuda = args.cuda.resolve()
     if not (cuda / "include/cuda_profiler_api.h").is_file():
         raise RuntimeError("CUDA installation is missing the cuda_profiler_api component")
-    run("cmake", "-S", str(source / "samples/trtexec"), "-B", str(args.build_dir), "-G", "Ninja",
-        "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
-        f"-DCUDAToolkit_ROOT={cuda}", f"-DCMAKE_CUDA_COMPILER={cuda / 'bin/nvcc.exe'}",
-        f"-DCMAKE_CUDA_ARCHITECTURES={args.architectures}", f"-DTENSORRT_HOME={sdk}",
-        f"-DVSMLRT_TRT_VERSION={args.version}")
+    cmake_args = ["cmake", "-S", str(source / "samples/trtexec"), "-B", str(args.build_dir), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", f"-DCUDAToolkit_ROOT={cuda}", f"-DCMAKE_CUDA_ARCHITECTURES={args.architectures}", f"-DTENSORRT_HOME={sdk}", f"-DVSMLRT_TRT_VERSION={args.version}"]
+    if os.name == "nt":
+        cmake_args.extend(["-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded", f"-DCMAKE_CUDA_COMPILER={cuda / 'bin/nvcc.exe'}"])
+    elif (cuda / "bin/nvcc").is_file():
+        cmake_args.append(f"-DCMAKE_CUDA_COMPILER={cuda / 'bin/nvcc'}")
+    run(*cmake_args)
     run("cmake", "--build", str(args.build_dir), "--verbose")
     run("cmake", "--install", str(args.build_dir), "--prefix", str(args.install_dir))
-    exe = args.install_dir / "bin/trtexec.exe"
+    exe = args.install_dir / "bin" / ("trtexec.exe" if os.name == "nt" else "trtexec")
     metadata = {"kind": "vsmlrt-custom", "sdk_version": args.version,
                 "source_revision": subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip(),
                 "cuda_root": str(cuda), "architectures": args.architectures,

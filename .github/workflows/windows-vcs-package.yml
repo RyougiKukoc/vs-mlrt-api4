@@ -294,7 +294,7 @@ jobs:
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          function Copy-DllsFromPackage($packageDir, $destinationDir, [switch]$Recursive) {
+          function Copy-DllsFromPackage($packageDir, $destinationDir, [switch]$Recursive, [switch]$IncludeBuildResources) {
             if ($Recursive) {
               $dlls = Get-ChildItem -LiteralPath $packageDir -Recurse -Filter "*.dll" -File -ErrorAction SilentlyContinue
             } else {
@@ -303,7 +303,7 @@ jobs:
               }
             }
             foreach ($dll in $dlls) {
-              if ($dll.Name -match '(?i)(builder_resource|sample|test)') {
+              if (-not $IncludeBuildResources -and $dll.Name -match '(?i)(builder_resource|sample|test)') {
                 Write-Host "Excluding build/test-only runtime: $($dll.Name)"
                 continue
               }
@@ -315,7 +315,8 @@ jobs:
           $baseCudaDir = "$basePluginDir\vsmlrt-cuda"
           $cudaPayloadDir = "payload-cuda\vsmlrt\vsmlrt-cuda"
           $cudnnPayloadDir = "payload-cudnn\vsmlrt\vsmlrt-cuda"
-          New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir | Out-Null
+          $builderCudaDir = "payload-builder\vsmlrt\vsmlrt-cuda"
+          New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir, $builderCudaDir | Out-Null
 
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
           $manifestPlugins = @("[VapourSynth Manifest V1]", "vstrt")
@@ -325,6 +326,9 @@ jobs:
           $manifestPlugins | Set-Content -LiteralPath "$basePluginDir\manifest.vs" -Encoding ascii
           Copy-DllsFromPackage "tensorrt" $baseCudaDir
           Copy-DllsFromPackage "cudnn" $cudnnPayloadDir -Recursive
+          Copy-Item vstrt\trtexec-install\bin\trtexec.exe $builderCudaDir
+          Copy-Item vstrt\trtexec-install\bin\trtexec-build.json $builderCudaDir
+          Copy-DllsFromPackage "tensorrt" $builderCudaDir -IncludeBuildResources
 
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $trtCoreCudaDir = "payload-trt-core\vsmlrt\vsmlrt-cuda"
@@ -385,6 +389,9 @@ jobs:
               throw "Missing payload item: $path"
             }
           }
+          foreach ($path in @("payload-builder\vsmlrt\vsmlrt-cuda\trtexec.exe", "payload-builder\vsmlrt\vsmlrt-cuda\trtexec-build.json")) {
+            if (-not (Test-Path $path)) { throw "Missing builder payload item: $path" }
+          }
           $manifest = Get-Content "payload-base\vsmlrt\manifest.vs"
           $expectedManifest = @("[VapourSynth Manifest V1]", "vstrt")
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
@@ -398,10 +405,7 @@ jobs:
               throw "Missing payload item matching: $glob"
             }
           }
-          foreach ($path in @(
-            "payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe",
-            "payload-base\vsmlrt\vsmlrt-cuda\trtexec-build.json"
-          )) {
+          foreach ($path in @("payload-base\vsmlrt\vsmlrt-cuda\trtexec.exe", "payload-base\vsmlrt\vsmlrt-cuda\trtexec-build.json", "payload-base\vsmlrt\vsmlrt-cuda\*builder_resource*.dll")) {
             if (Test-Path $path) { throw "Runtime payload must not contain build-only tool: $path" }
           }
           Write-Host "cuDNN payload DLLs:"
@@ -422,6 +426,7 @@ jobs:
           7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload-base\*
           7z a -tzip -mx=0 "vs-mlrt-windows-x64-cuda-${{ matrix.cuda_flavor }}.zip" .\payload-cuda\*
           7z a -tzip -mx=0 "vs-mlrt-windows-x64-cudnn-${{ matrix.cuda_flavor }}.zip" .\payload-cudnn\*
+          7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-builder-${{ matrix.cuda_flavor }}.zip" .\payload-builder\*
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-core-cu129.zip" .\payload-trt-core\*
             7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip" .\payload-trt-plugin\*

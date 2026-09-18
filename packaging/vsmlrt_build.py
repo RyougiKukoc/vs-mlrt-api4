@@ -11,6 +11,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -169,6 +170,10 @@ class CustomBuildHook(BuildHookInterface):
         # Linux payloads keep a flat directory to match their $ORIGIN RPATH.
         if platform.system() == "Windows":
             self._flatten_openvino_runtime(plugin_dir)
+        if platform.system() == "Linux":
+            for helper in (plugin_dir / "vsmlrt-cuda" / "trtexec", plugin_dir / "vsmlrt-cuda" / "tensorrt_rtx"):
+                if helper.is_file():
+                    helper.chmod(helper.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         self._write_manifest(plugin_dir)
 
     def _flatten_openvino_runtime(self, plugin_dir: Path) -> None:
@@ -196,13 +201,10 @@ class CustomBuildHook(BuildHookInterface):
 
     def _validate_plugin_dir(self, plugin_dir: Path, payload_tag: str) -> None:
         suffix = self._native_suffix()
-        expected = {"vsov"} if platform.system() == "Linux" else {"vsncnn", "vsov"}
+        expected = {"vsncnn", "vsov"}
         if payload_tag in CUDA_TAGS:
             expected.add("vstrt")
-        # Linux publishes standard TensorRT only. TensorRT-RTX needs its own
-        # Linux SDK/runtime and supported RTX validation before it can join a
-        # Linux payload; Windows retains the existing cu129 RTX package.
-        if payload_tag == "cu129" and platform.system() == "Windows":
+        if payload_tag == "cu129":
             expected.add("vstrt_rtx")
         missing = [name for name in sorted(expected) if not (plugin_dir / f"{name}{suffix}").is_file()]
         if missing:
@@ -211,6 +213,20 @@ class CustomBuildHook(BuildHookInterface):
             )
         if not (plugin_dir / "models").is_dir():
             raise RuntimeError("Selected payload is missing models/.")
+        if payload_tag in CUDA_TAGS:
+            helper_dir = plugin_dir / "vsmlrt-cuda"
+            for helper in ("trtexec", "trtexec-build.json"):
+                if not self._first_existing(helper_dir / helper):
+                    raise RuntimeError(f"Selected {payload_tag} payload is missing builder helper {helper}.")
+        if payload_tag == "cu129" and not self._first_existing(plugin_dir / "vsmlrt-cuda" / "tensorrt_rtx"):
+            raise RuntimeError("Selected cu129 payload is missing TensorRT-RTX builder helper.")
+
+    @staticmethod
+    def _first_existing(path: Path) -> Path | None:
+        candidates = [path]
+        if platform.system() == "Windows" and path.suffix == "":
+            candidates.insert(0, path.with_suffix(".exe"))
+        return next((candidate for candidate in candidates if candidate.is_file()), None)
 
     def _native_suffix(self) -> str:
         return {"Windows": ".dll", "Linux": ".so", "Darwin": ".dylib"}.get(platform.system(), ".so")
@@ -253,6 +269,8 @@ class CustomBuildHook(BuildHookInterface):
                     f"vs-mlrt-windows-x64-cudnn-{payload_tag}.zip",
                 ]
                 tags = [GENERIC_TAG, payload_tag, payload_tag, payload_tag]
+                assets.append(f"vs-mlrt-windows-x64-tensorrt-builder-{payload_tag}.zip")
+                tags.append(payload_tag)
                 if payload_tag == "cu129":
                     assets.extend(
                         [
@@ -272,9 +290,13 @@ class CustomBuildHook(BuildHookInterface):
                         f"vs-mlrt-linux-x64-tensorrt-{payload_tag}.zip",
                         f"vs-mlrt-linux-x64-cuda-{payload_tag}.zip",
                         f"vs-mlrt-linux-x64-cudnn-{payload_tag}.zip",
+                        f"vs-mlrt-linux-x64-tensorrt-builder-{payload_tag}.zip",
                     ]
                 )
-                tags.extend([payload_tag] * 3)
+                tags.extend([payload_tag] * 4)
+                if payload_tag == "cu129":
+                    assets.append("vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip")
+                    tags.append(payload_tag)
         else:
             raise RuntimeError(f"No tested release payload exists for {system} {platform.machine()}.")
         return self._download_urls(

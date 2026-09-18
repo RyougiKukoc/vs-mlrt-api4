@@ -54,19 +54,17 @@ flattened OpenVINO runtime layout.
 
 On Linux x86_64, the build hook downloads the matching tested Linux Release
 payload by default and reports `vs-mlrt: using Release asset`. The Linux
-`generic` payload carries the CPU-capable OpenVINO backend (`vsov`); the CUDA
-payloads overlay the matching TensorRT backend on it. Linux does not ship the
-Vulkan/NCNN binary because its Vulkan driver requirements are materially less
-portable than the OpenVINO CPU payload. Windows continues to ship both NCNN and
-OpenVINO in `generic`.
+`generic` payload carries both OpenVINO (`vsov`) and Vulkan/NCNN (`vsncnn`);
+CUDA payloads overlay the matching TensorRT backends. A host Vulkan limitation
+does not remove NCNN from the Linux payload.
 
 The wrapper resolves helper executables in this order: an explicit
 `VSMLRT_TRTEXEC_PATH`, `VSMLRT_MIGRAPHX_DRIVER_PATH`, or
 `VSMLRT_TENSORRT_RTX_PATH` override; the selected package payload; then the
 host `PATH`. It preserves the parent process environment when launching those
 tools and adds package-local runtime directories only for package-local tools.
-This keeps Linux runtime wheels free of TensorRT builder resources while
-allowing a container or system TensorRT installation to provide `trtexec`.
+CUDA installs include a version-matched builder overlay, so public
+`Backend.TRT` ONNX conversion does not rely on a system-wide `trtexec`.
 
 Set `VSMLRT_FORCE_BUILD=1` to bypass Release assets. The fallback invokes the
 repository CMake projects and requires a compatible VapourSynth wheel SDK plus
@@ -137,12 +135,13 @@ On Linux x86_64, the matching release asset names are
 `vs-mlrt-linux-x64-generic.zip`,
 `vs-mlrt-linux-x64-tensorrt-<variant>.zip`,
 `vs-mlrt-linux-x64-cuda-<variant>.zip`,
-`vs-mlrt-linux-x64-cudnn-<variant>.zip`. The CUDA assets overlay in
+`vs-mlrt-linux-x64-cudnn-<variant>.zip`,
+`vs-mlrt-linux-x64-tensorrt-builder-<variant>.zip`, and for `cu129`,
+`vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`. The CUDA assets overlay in
 that order after the generic asset. Every zip is rooted at `vsmlrt/` and
 contains ELF `.so` files only; the shared `models.zip` payload is installed for
-all three refs. Linux CUDA payloads currently carry the standard `vstrt`
-backend; `vstrt_rtx` remains Windows-only until a separately validated Linux
-TensorRT-RTX runtime is available. Generic Linux wheels use the VapourSynth
+all three refs. Linux `cu129` carries `vstrt_rtx` and its matched TensorRT-RTX
+helper. Generic Linux wheels use the VapourSynth
 R79 baseline tag `manylinux_2_27_x86_64`. The CUDA 12.1 and 12.9 TensorRT
 plugins are tagged `manylinux_2_34_x86_64`: `readelf --version-info` on their
 final `vstrt.so` records `GLIBC_2.34`, so presenting those SDK-bound wheels as
@@ -256,7 +255,8 @@ hook:
   `vs-mlrt-windows-x64-cudnn-cu121.zip`, plus
   `vs-mlrt-linux-x64-tensorrt-cu121.zip`,
   `vs-mlrt-linux-x64-cuda-cu121.zip`,
-  `vs-mlrt-linux-x64-cudnn-cu121.zip`.
+  `vs-mlrt-linux-x64-cudnn-cu121.zip`, and
+  `vs-mlrt-linux-x64-tensorrt-builder-cu121.zip`.
 - `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`,
   `vs-mlrt-windows-x64-cuda-cu129.zip`,
   `vs-mlrt-windows-x64-cudnn-cu129.zip`,
@@ -266,7 +266,9 @@ hook:
   `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`, plus
   `vs-mlrt-linux-x64-tensorrt-cu129.zip`,
   `vs-mlrt-linux-x64-cuda-cu129.zip`,
-  `vs-mlrt-linux-x64-cudnn-cu129.zip`.
+  `vs-mlrt-linux-x64-cudnn-cu129.zip`,
+  `vs-mlrt-linux-x64-tensorrt-builder-cu129.zip`, and
+  `vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN
@@ -286,10 +288,9 @@ overlay all selected assets into one VapourSynth plugin directory:
 vapoursynth/plugins/vsmlrt/
 ```
 
-Each individual release line includes its own `manifest.vs`. The `generic`
-release lists `vsncnn` and `vsov`; the CUDA releases list only their TRT-side
-plugins. When manually overlaying `generic` with a CUDA release, merge the
-plugin names in the manifest as well.
+Plugin-bearing overlays include `manifest.vs`; CUDA, cuDNN, and builder
+overlays contain support libraries and helpers only. The root wheel regenerates
+the combined manifest after all selected overlays are installed.
 
 For normal users, prefer the tag-based pip installs above. They install native DLLs, support
 DLLs, models, the DLL search-path helper, and `vsmlrt.py` in the layout expected
@@ -323,8 +324,9 @@ Windows release workflows:
   `models` release asset.
 - `.github/workflows/windows-vcs-generic.yml` builds the `generic` native
   payload with `vsncnn` and `vsov`.
-- `.github/workflows/windows-vcs-package.yml` builds the `cu121` and `cu129`
-  TensorRT payload assets.
+- `.github/workflows/windows-vcs-package.yml` builds Windows TensorRT, builder,
+  CUDA and RTX payload assets.
+- `.github/workflows/linux-vcs-package.yml` builds the matching Linux assets.
 - `.github/workflows/windows-vcs-install-smoke.yml` installs from the
   `generic`, `cu121`, and `cu129` VCS tags, then verifies the installed layout.
 

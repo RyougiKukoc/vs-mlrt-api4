@@ -144,6 +144,7 @@ class ReleasePayloadBuildHook(BuildHookInterface):
                 f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-tensorrt-{tag}.zip",
                 f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-cuda-{tag}.zip",
                 f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-cudnn-{tag}.zip",
+                f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-tensorrt-builder-{tag}.zip",
             ]
             if tag == "cu129":
                 urls.extend(

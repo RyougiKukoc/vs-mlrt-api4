@@ -1,0 +1,101 @@
+name: Build Linux VCS payloads
+on:
+  push:
+    tags: [generic, cu121, cu129]
+  workflow_dispatch:
+    inputs:
+      variant:
+        required: true
+        default: generic
+        type: choice
+        options: [generic, cu121, cu129]
+      publish:
+        required: false
+        default: false
+        type: boolean
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        variant: [generic, cu121, cu129]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select variant
+        id: select
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+          INPUT: ${{ inputs.variant || '' }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          build=false
+          [[ "$EVENT" == push && "$REF" == "$VARIANT" ]] && build=true
+          [[ "$EVENT" == workflow_dispatch && "$INPUT" == "$VARIANT" ]] && build=true
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - name: Install build tools
+        if: steps.select.outputs.build == 'true'
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl unzip git zstd
+      - name: Build native Linux payload
+        if: steps.select.outputs.build == 'true'
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euxo pipefail
+          mkdir -p deps
+          curl -fsSL -o deps/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i deps/cuda-keyring.deb && sudo apt-get update
+          if [[ "$VARIANT" == cu121 ]]; then sudo apt-get install -y cuda-toolkit-12-1; else sudo apt-get install -y cuda-toolkit-12-9; fi
+          curl -fsSL -o deps/vs.zip https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R79.zip
+          unzip -q deps/vs.zip -d deps && mv deps/vapoursynth-* deps/vapoursynth
+          git clone --depth 1 --branch v3.21.12 https://github.com/protocolbuffers/protobuf.git deps/protobuf
+          cmake -S deps/protobuf/cmake -B deps/protobuf/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -Dprotobuf_BUILD_SHARED_LIBS=OFF -Dprotobuf_BUILD_TESTS=OFF
+          cmake --build deps/protobuf/build --parallel && cmake --install deps/protobuf/build --prefix deps/protobuf/install
+          git clone --depth 1 https://github.com/onnx/onnx.git deps/onnx
+          git -C deps/onnx fetch --depth 1 origin b86cc54efce19530fb953e4b21f57e6b3888534c && git -C deps/onnx checkout FETCH_HEAD
+          cmake -S deps/onnx -B deps/onnx/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DProtobuf_PROTOC_EXECUTABLE=$PWD/deps/protobuf/install/bin/protoc -DProtobuf_LITE_LIBRARY=$PWD/deps/protobuf/install/lib -DProtobuf_LIBRARIES=$PWD/deps/protobuf/install/lib -DONNX_USE_LITE_PROTO=ON -DONNX_USE_PROTOBUF_SHARED_LIBS=OFF -DONNX_GEN_PB_TYPE_STUBS=OFF -DONNX_ML=0
+          cmake --build deps/onnx/build --parallel && cmake --install deps/onnx/build --prefix deps/onnx/install
+          curl -fsSL -o deps/ncnn.zip https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404.zip && unzip -q deps/ncnn.zip -d deps
+          curl -fsSL -o deps/openvino.tgz https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.6/linux/l_openvino_toolkit_ubuntu24_2024.6.0.17404.4c0f47d2335_x86_64.tgz && tar -xzf deps/openvino.tgz -C deps && mv deps/l_openvino_* deps/openvino
+          if [[ "$VARIANT" == cu121 ]]; then trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/secure/8.6.1/tars/TensorRT-8.6.1.6.Linux.x86_64-gnu.cuda-12.0.tar.gz; trt_ref=v8.6.1; trt_ver=8.6.1.6; cuda_root=/usr/local/cuda-12.1; else trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.1.0/tars/TensorRT-Enterprise-11.1.0.106-Linux-x86_64-cuda-12.9-Release-external.tar.zst; trt_ref=v11.1; trt_ver=11.1.0.106; cuda_root=/usr/local/cuda-12.9; fi
+          if [[ "$VARIANT" != generic ]]; then
+            curl -fsSL -o deps/tensorrt.archive "$trt_url" && tar -xf deps/tensorrt.archive -C deps && mv deps/TensorRT-* deps/tensorrt
+            git clone --depth 1 --branch "$trt_ref" https://github.com/NVIDIA/TensorRT.git deps/tensorrt-oss
+            mkdir -p deps/tensorrt-oss/include/nlohmann && curl -fsSL -o deps/tensorrt-oss/include/nlohmann/json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/tags/v3.11.3/single_include/nlohmann/json.hpp
+            python3 tools/build_custom_trtexec.py --source deps/tensorrt-oss --sdk deps/tensorrt --version "$trt_ver" --cuda "$cuda_root" --build-dir build/trtexec --install-dir build/trtexec-install
+          fi
+          if [[ "$VARIANT" == cu129 ]]; then curl -fsSL -o deps/rtx.tar.zst https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.5/TensorRT-RTX-1.5.0.114-Linux-x86_64-cuda-12.9-Release-external.tar.zst && tar -xf deps/rtx.tar.zst -C deps && mv deps/TensorRT-RTX-* deps/tensorrt-rtx; fi
+          export VSMLRT_VAPOURSYNTH_INCLUDE_DIRECTORY="$PWD/deps/vapoursynth/include"
+          export VSMLRT_NCNN_DIR="$PWD/deps/ncnn-20250503-ubuntu-2404/lib/cmake/ncnn"
+          export VSMLRT_ONNX_DIR="$PWD/deps/onnx/install/lib/cmake/ONNX"
+          export VSMLRT_PROTOBUF_DIR="$PWD/deps/protobuf/install/lib/cmake/protobuf"
+          export VSMLRT_OPENVINO_DIR="$PWD/deps/openvino/runtime/cmake"
+          export VSMLRT_RUNTIME_ROOTS="$PWD/deps/ncnn-20250503-ubuntu-2404/lib:$PWD/deps/openvino/runtime:$PWD/deps/onnx/install/lib:$PWD/deps/protobuf/install/lib"
+          if [[ "$VARIANT" != generic ]]; then export CUDAToolkit_ROOT="$cuda_root" VSMLRT_TENSORRT_HOME="$PWD/deps/tensorrt" VSMLRT_TRTEXEC_PATH="$PWD/build/trtexec-install/bin/trtexec" VSMLRT_TRTEXEC_BUILD_METADATA="$PWD/build/trtexec-install/bin/trtexec-build.json" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$cuda_root/lib64:$PWD/deps/tensorrt/lib"; fi
+          if [[ "$VARIANT" == cu129 ]]; then export VSMLRT_TENSORRT_RTX_HOME="$PWD/deps/tensorrt-rtx" VSMLRT_TENSORRT_RTX_PATH="$PWD/deps/tensorrt-rtx/bin/tensorrt_rtx" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$PWD/deps/tensorrt-rtx/lib"; fi
+          python3 packaging/linux_native_build.py --variant "$VARIANT" --stage-dir "build/payload-$VARIANT"
+          if [[ "$VARIANT" == generic ]]; then
+            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component generic --output vs-mlrt-linux-x64-generic.zip
+          else
+            for component in tensorrt cuda cudnn builder; do
+              python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component "$component" --output "vs-mlrt-linux-x64-$component-$VARIANT.zip"
+            done
+            if [[ "$VARIANT" == cu129 ]]; then python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component rtx --output vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip; fi
+          fi
+      - name: Upload Linux assets
+        if: steps.select.outputs.build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vs-mlrt-linux-${{ matrix.variant }}
+          path: vs-mlrt-linux-x64-*.zip
+      - name: Publish Linux assets
+        if: steps.select.outputs.build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.variant }}
+          files: vs-mlrt-linux-x64-*.zip
+          prerelease: true

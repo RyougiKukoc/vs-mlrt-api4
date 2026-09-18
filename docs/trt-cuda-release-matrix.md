@@ -1,8 +1,8 @@
 # TensorRT CUDA Release Matrix
 
-This document describes the Windows TensorRT payloads published by this fork
-and the rules for keeping those payloads in sync with the tag-selected VCS
-installer.
+This document describes the Windows and Linux TensorRT payloads published by
+this fork and the rules for keeping those payloads in sync with the tag-selected
+VCS installer.
 
 The short version:
 
@@ -60,9 +60,9 @@ The build hooks download these assets from GitHub Releases:
 | Release tag | Assets |
 | --- | --- |
 | `models` | `models.zip` |
-| `generic` | `vs-mlrt-windows-x64-generic.zip` |
-| `cu121` | `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip` |
-| `cu129` | `vs-mlrt-windows-x64-tensorrt-cu129.zip`, `vs-mlrt-windows-x64-cuda-cu129.zip`, `vs-mlrt-windows-x64-cudnn-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip` |
+| `generic` | `vs-mlrt-windows-x64-generic.zip`, `vs-mlrt-linux-x64-generic.zip` |
+| `cu121` | `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`, plus matching Linux assets |
+| `cu129` | Windows standard, split TensorRT, CUDA, builder, and RTX assets, plus matching Linux standard, CUDA, cuDNN, builder, and RTX assets |
 
 All native payload zips are rooted at `vsmlrt/`. After pip installation, the
 selected payloads overlay into:
@@ -76,31 +76,33 @@ Important layout details:
 - `models.zip` supplies `models/` and is shared by all three install tags.
 - CUDA payloads place CUDA, cuDNN, TensorRT, and helper executables under
   `vsmlrt/vsmlrt-cuda/`.
+- Builder overlays contain `trtexec`, its provenance JSON, and TensorRT builder
+  resources required by public `Backend.TRT` ONNX conversion.
 - `vstrt.dll` lives at the plugin root. `vstrt_rtx.dll` is installed only by
   `cu129`.
 - `generic` contains no CUDA, TensorRT, ORT, or DirectML payload. It contains
   only `vsncnn`, `vsov`, and their support DLLs.
 - OpenVINO support files live once at the plugin root. There is no duplicated
   `vsov/` runtime directory.
-- Every release line includes a `manifest.vs` for manual single-line installs.
-  The `generic` manifest lists `vsncnn` and `vsov`. The `cu121` manifest lists
-  `vstrt`. The `cu129` manifest lists `vstrt` and `vstrt_rtx`.
-  The root `vs-mlrt` wheel regenerates one shared manifest after overlaying the
-  downloaded assets, so `@cu121` ends up with `vsncnn`, `vsov`, and `vstrt`,
-  while `@cu129` adds `vstrt_rtx`.
+- Plugin-bearing overlays include `manifest.vs`; CUDA, cuDNN, and builder
+  overlays contain support libraries and helpers only. The root `vs-mlrt`
+  wheel regenerates one shared manifest after overlaying selected assets, so
+  `@cu121` ends up with `vsncnn`, `vsov`, and `vstrt`, while `@cu129` adds
+  `vstrt_rtx`.
 
 The `cu129` TensorRT payload is split because GitHub Release assets must stay
 below 2 GiB.
 
 ## Publishing Workflow
 
-Windows release assets are produced by these workflows:
+Windows and Linux release assets are produced by these workflows:
 
 | Workflow | Purpose |
 | --- | --- |
 | `.github/workflows/windows-vcs-models.yml` | Build and publish the shared `models` asset. |
 | `.github/workflows/windows-vcs-generic.yml` | Build and publish the NVIDIA-free `generic` asset. |
-| `.github/workflows/windows-vcs-package.yml` | Build and publish the `cu121` and `cu129` TensorRT assets. |
+| `.github/workflows/windows-vcs-package.yml` | Build and publish Windows TensorRT, CUDA, builder, and RTX assets. |
+| `.github/workflows/linux-vcs-package.yml` | Build and publish matching Linux assets. |
 | `.github/workflows/windows-vcs-install-smoke.yml` | Manual check of the already published `generic`, `cu121`, and `cu129` VCS tags. |
 
 The generic and pinned TensorRT workflows also build pull requests, without
@@ -171,13 +173,9 @@ For each refreshed CUDA Release slot:
    `GRAY_S` frame through `core.trt_rtx.Model`; require matching dimensions,
    format, and frame hash. This proves a real GPU engine build and plugin
    inference rather than just DLL discovery.
-4. Treat `cu121` engine execution as a separate gate when a matching TensorRT
-   8.6 engine compiler is available. The runtime release deliberately excludes
-   both build-only `trtexec` and `nvinfer_builder_resource.dll`; attempting
-   `createInferBuilder_INTERNAL` from the runtime payload must fail at that
-   missing resource. Its release check therefore proves plugin loading, version
-   reporting, and GPU device enumeration without adding build resources to the
-   user payload.
+4. Treat `cu121` engine execution as a separate gate using the matching
+   builder overlay. Verify the packaged `trtexec` and builder resource create a
+   deterministic engine, then verify `vstrt` renders a real frame.
 
 These are CUDA runtime/package checks, not an API3/API4 behavior comparison.
 Record the driver, GPU, runtime versions, Release digests, and any engine/frame
