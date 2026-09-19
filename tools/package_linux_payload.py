@@ -16,7 +16,7 @@ def main() -> None:
     parser.add_argument("--stage-dir", type=Path, required=True)
     parser.add_argument("--variant", choices=["generic", "cu121", "cu129"], required=True)
     parser.add_argument("--component", choices=["generic", "tensorrt", "cuda", "cuda-part", "cudnn", "cudnn-part", "builder", "builder-tools", "builder-resource", "rtx", "all"], default="all")
-    parser.add_argument("--resource-index", type=int, choices=[1, 2, 3, 4])
+    parser.add_argument("--resource-index", type=int, choices=list(range(1, 9)))
     parser.add_argument("--part-index", type=int, choices=[1, 2])
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--inventory", type=Path)
@@ -34,10 +34,10 @@ def main() -> None:
     builder_resources = sorted(
         (name, path) for name, path in files.items() if "builder_resource" in PurePosixPath(name).name
     )
-    resource_slots: list[list[str]] = [[], [], [], []]
-    resource_sizes = [0, 0, 0, 0]
+    resource_slots: list[list[str]] = [[] for _ in range(8)]
+    resource_sizes = [0] * 8
     for name, path in sorted(builder_resources, key=lambda item: item[1].stat().st_size, reverse=True):
-        slot = min(range(4), key=resource_sizes.__getitem__)
+        slot = min(range(8), key=resource_sizes.__getitem__)
         resource_slots[slot].append(name)
         resource_sizes[slot] += path.stat().st_size
     selected_resources = set(resource_slots[(args.resource_index or 1) - 1])

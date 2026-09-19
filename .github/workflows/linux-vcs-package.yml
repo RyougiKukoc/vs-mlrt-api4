@@ -97,7 +97,7 @@ jobs:
             python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cudnn-part --part-index 2 --output "vs-mlrt-linux-x64-cudnn-part-2-$VARIANT.zip"
             if [[ "$VARIANT" == cu129 ]]; then
               python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder-tools --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
-              for index in 1 2 3 4; do
+              for index in 1 2 3 4 5 6 7 8; do
                 python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder-resource --resource-index "$index" --output "vs-mlrt-linux-x64-tensorrt-builder-resource-$index-cu129.zip"
               done
             else

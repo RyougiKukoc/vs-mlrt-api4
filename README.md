@@ -143,7 +143,8 @@ On Linux x86_64, the matching release asset names are
 `vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip`,
 `vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip`,
 `vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip`,
-`vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip`, and
+`vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip` through
+`vs-mlrt-linux-x64-tensorrt-builder-resource-8-cu129.zip`, and
 `vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`. The CUDA assets overlay in
 that order after the generic asset. Every zip is rooted at `vsmlrt/`; native
 library overlays contain ELF `.so` files, while builder and RTX overlays also
@@ -287,13 +288,13 @@ hook:
   `vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip`,
   `vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip`,
   `vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip`, and
-  `vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip`, and
+  `vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip` through
+  `vs-mlrt-linux-x64-tensorrt-builder-resource-8-cu129.zip`, and
   `vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`.
 
-The Windows and Linux TensorRT 11.1 builder resources are split into three
-overlays because their combined size is larger than GitHub's 2 GiB per-asset
-limit. The build hook downloads all Windows overlays and all four Linux
-resource overlays for `@cu129`.
+The Windows TensorRT 11.1 builder resources are split into three overlays; the
+Linux resources use eight overlays because both SONAME aliases and versioned
+ELF files are retained. All stay below GitHub's 2 GiB per-asset limit.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN

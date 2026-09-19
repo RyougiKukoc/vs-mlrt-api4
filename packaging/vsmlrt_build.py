@@ -302,10 +302,10 @@ class CustomBuildHook(BuildHookInterface):
                 if payload_tag == "cu129":
                     assets.extend(
                         [
-                            "vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip",
-                            "vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip",
-                            "vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip",
-                            "vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip",
+                            *[
+                                f"vs-mlrt-linux-x64-tensorrt-builder-resource-{index}-cu129.zip"
+                                for index in range(1, 9)
+                            ],
                             "vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip",
                         ]
                     )

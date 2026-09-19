@@ -44,6 +44,10 @@ class LinuxStagedPayloadTests(unittest.TestCase):
                 "vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_2.so"],
                 "vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_3.so"],
                 "vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_4.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-5-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_5.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-6-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_6.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-7-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_7.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-8-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_8.so"],
             }.items():
                 self.write_zip(root, name, members)
             with self.assertRaisesRegex(RuntimeError, "RTX"):

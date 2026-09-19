@@ -62,7 +62,7 @@ The build hooks download these assets from GitHub Releases:
 | `models` | `models.zip` |
 | `generic` | `vs-mlrt-windows-x64-generic.zip`, `vs-mlrt-linux-x64-generic.zip` |
 | `cu121` | Windows `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`; Linux splits CUDA and cuDNN into two assets each |
-| `cu129` | Windows standard, split TensorRT, CUDA, cuDNN, builder tool plus three builder-resource, and RTX assets; Linux splits CUDA and cuDNN into two assets and uses four builder-resource overlays to account for ELF SONAME aliases |
+| `cu129` | Windows standard, split TensorRT, CUDA, cuDNN, builder tool plus three builder-resource, and RTX assets; Linux splits CUDA/cuDNN into two assets and uses eight builder-resource overlays for ELF SONAME aliases |
 
 All native payload zips are rooted at `vsmlrt/`. After pip installation, the
 selected payloads overlay into:
@@ -79,7 +79,7 @@ Important layout details:
 - Builder overlays contain `trtexec`, its provenance JSON, and TensorRT builder
   resources required by public `Backend.TRT` ONNX conversion. Windows `cu129`
   publishes the tool overlay plus three resource overlays, while Linux uses
-  four resource overlays because staged ELF SONAME aliases are retained. Both
+  eight resource overlays because staged ELF SONAME aliases are retained. Both
   stay below GitHub's 2 GiB per-asset limit.
 - `vstrt.dll` lives at the plugin root. `vstrt_rtx.dll` is installed only by
   `cu129`.
