@@ -124,7 +124,8 @@ DLLs actually present. That means `@cu121` produces `vsncnn`, `vsov`, and
 
 ## Backend Scope
 
-This fork intentionally publishes a smaller Windows payload set than upstream.
+This fork publishes the selected native backend set explicitly on Windows and
+Linux.
 The released VCS tags are:
 
 - `generic`: `vsncnn` and `vsov`.
@@ -138,10 +139,11 @@ On Linux x86_64, the matching release asset names are
 `vs-mlrt-linux-x64-cudnn-<variant>.zip`,
 `vs-mlrt-linux-x64-tensorrt-builder-<variant>.zip`, and for `cu129`,
 `vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`. The CUDA assets overlay in
-that order after the generic asset. Every zip is rooted at `vsmlrt/` and
-contains ELF `.so` files only; the shared `models.zip` payload is installed for
-all three refs. Linux `cu129` carries `vstrt_rtx` and its matched TensorRT-RTX
-helper. Generic Linux wheels use the VapourSynth
+that order after the generic asset. Every zip is rooted at `vsmlrt/`; native
+library overlays contain ELF `.so` files, while builder and RTX overlays also
+contain helper executables and metadata. The shared `models.zip` payload is
+installed for all three refs. Linux `cu129` carries `vstrt_rtx` and its matched
+TensorRT-RTX helper. Generic Linux wheels use the VapourSynth
 R79 baseline tag `manylinux_2_27_x86_64`. The CUDA 12.1 and 12.9 TensorRT
 plugins are tagged `manylinux_2_34_x86_64`: `readelf --version-info` on their
 final `vstrt.so` records `GLIBC_2.34`, so presenting those SDK-bound wheels as

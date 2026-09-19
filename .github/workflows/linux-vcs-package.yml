@@ -47,9 +47,11 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p deps
-          curl -fsSL -o deps/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-          sudo dpkg -i deps/cuda-keyring.deb && sudo apt-get update
-          if [[ "$VARIANT" == cu121 ]]; then sudo apt-get install -y cuda-toolkit-12-1; else sudo apt-get install -y cuda-toolkit-12-9; fi
+          if [[ "$VARIANT" != generic ]]; then
+            curl -fsSL -o deps/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+            sudo dpkg -i deps/cuda-keyring.deb && sudo apt-get update
+            if [[ "$VARIANT" == cu121 ]]; then sudo apt-get install -y cuda-toolkit-12-1; else sudo apt-get install -y cuda-toolkit-12-9; fi
+          fi
           curl -fsSL -o deps/vs.zip https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R79.zip
           unzip -q deps/vs.zip -d deps && mv deps/vapoursynth-* deps/vapoursynth
           git clone --depth 1 --branch v3.21.12 https://github.com/protocolbuffers/protobuf.git deps/protobuf
@@ -81,9 +83,10 @@ jobs:
           if [[ "$VARIANT" == generic ]]; then
             python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component generic --output vs-mlrt-linux-x64-generic.zip
           else
-            for component in tensorrt cuda cudnn builder; do
+            for component in tensorrt cuda cudnn; do
               python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component "$component" --output "vs-mlrt-linux-x64-$component-$VARIANT.zip"
             done
+            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
             if [[ "$VARIANT" == cu129 ]]; then python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component rtx --output vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip; fi
           fi
       - name: Upload Linux assets
@@ -92,6 +95,11 @@ jobs:
         with:
           name: vs-mlrt-linux-${{ matrix.variant }}
           path: vs-mlrt-linux-x64-*.zip
+
+      - name: Verify staged Linux payload
+        if: steps.select.outputs.build == 'true'
+        shell: bash
+        run: python3 tools/verify_linux_staged_payload.py --variant "${{ matrix.variant }}" --asset-dir .
       - name: Publish Linux assets
         if: steps.select.outputs.build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         uses: softprops/action-gh-release@v2

@@ -392,6 +392,9 @@ jobs:
           foreach ($path in @("payload-builder\vsmlrt\vsmlrt-cuda\trtexec.exe", "payload-builder\vsmlrt\vsmlrt-cuda\trtexec-build.json")) {
             if (-not (Test-Path $path)) { throw "Missing builder payload item: $path" }
           }
+          if (-not (Get-ChildItem "payload-builder\vsmlrt\vsmlrt-cuda" -Filter "*builder_resource*.dll" -File -ErrorAction SilentlyContinue)) {
+            throw "Builder payload is missing TensorRT builder resources."
+          }
           $manifest = Get-Content "payload-base\vsmlrt\manifest.vs"
           $expectedManifest = @("[VapourSynth Manifest V1]", "vstrt")
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
