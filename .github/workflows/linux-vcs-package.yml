@@ -79,7 +79,7 @@ jobs:
           export VSMLRT_PROTOBUF_DIR="$PWD/deps/protobuf/install/lib/cmake/protobuf"
           export VSMLRT_OPENVINO_DIR="$PWD/deps/openvino/runtime/cmake"
           export VSMLRT_RUNTIME_ROOTS="$PWD/deps/ncnn-20250503-ubuntu-2404/lib:$PWD/deps/openvino/runtime:$PWD/deps/onnx/install/lib:$PWD/deps/protobuf/install/lib"
-          if [[ "$VARIANT" != generic ]]; then export CUDAToolkit_ROOT="$cuda_root" VSMLRT_TENSORRT_HOME="$PWD/deps/tensorrt" VSMLRT_TRTEXEC_PATH="$PWD/build/trtexec-install/bin/trtexec" VSMLRT_TRTEXEC_BUILD_METADATA="$PWD/build/trtexec-install/bin/trtexec-build.json" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$cuda_root/lib64:$PWD/deps/tensorrt/lib:$PWD/deps/cudnn/lib"; fi
+          if [[ "$VARIANT" != generic ]]; then export CUDAToolkit_ROOT="$cuda_root" VSMLRT_TENSORRT_HOME="$PWD/deps/tensorrt" VSMLRT_TRTEXEC_PATH="$PWD/build/trtexec-install/bin/trtexec" VSMLRT_TRTEXEC_BUILD_METADATA="$PWD/build/trtexec-install/bin/trtexec-build.json" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$cuda_root/lib64:$cuda_root/nvvm/lib64:$PWD/deps/tensorrt/lib:$PWD/deps/cudnn/lib"; fi
           if [[ "$VARIANT" == cu129 ]]; then export VSMLRT_TENSORRT_RTX_HOME="$PWD/deps/tensorrt-rtx" VSMLRT_TENSORRT_RTX_PATH="$PWD/deps/tensorrt-rtx/bin/tensorrt_rtx" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$PWD/deps/tensorrt-rtx/lib"; fi
           python3 packaging/linux_native_build.py --variant "$VARIANT" --stage-dir "build/payload-$VARIANT"
           if [[ "$VARIANT" == generic ]]; then
