@@ -112,6 +112,10 @@ jobs:
               exit 1
             fi
           done
+      - name: Download published generic Linux dependency
+        if: steps.select.outputs.build == 'true' && matrix.variant != 'generic'
+        shell: bash
+        run: curl -fsSL -o vs-mlrt-linux-x64-generic.zip "https://github.com/${{ github.repository }}/releases/download/generic/vs-mlrt-linux-x64-generic.zip"
       - name: Verify staged Linux payload
         if: steps.select.outputs.build == 'true'
         shell: bash
