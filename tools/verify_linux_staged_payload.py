@@ -70,6 +70,9 @@ def verify(variant: str, asset_dir: Path) -> None:
     }
     if not required.issubset(names):
         raise RuntimeError(f"Linux {variant} payload is missing: {sorted(required - names)}")
+    for family in ("libcudart", "libcublas", "libnvinfer", "libnvinfer_plugin", "libnvonnxparser"):
+        if not any(name.startswith(f"vsmlrt/{family}") for name in names):
+            raise RuntimeError(f"Linux {variant} payload is missing the {family} library family")
     if not any(name.startswith("vsmlrt/libcudnn") for name in names):
         raise RuntimeError(f"Linux {variant} payload is missing the cuDNN library family")
     if not any("builder_resource" in name for name in names):

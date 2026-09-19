@@ -34,8 +34,8 @@ class LinuxStagedPayloadTests(unittest.TestCase):
             root = Path(temp)
             self.write_zip(root, "vs-mlrt-linux-x64-generic.zip", ["vsmlrt/vsncnn.so", "vsmlrt/vsov.so", "vsmlrt/manifest.vs"])
             for name, members in {
-                "vs-mlrt-linux-x64-tensorrt-cu129.zip": ["vsmlrt/vstrt.so", "vsmlrt/manifest.vs"],
-                "vs-mlrt-linux-x64-cuda-cu129.zip": ["vsmlrt/libcudart.so"],
+                "vs-mlrt-linux-x64-tensorrt-cu129.zip": ["vsmlrt/vstrt.so", "vsmlrt/manifest.vs", "vsmlrt/libnvinfer.so", "vsmlrt/libnvinfer_plugin.so", "vsmlrt/libnvonnxparser.so"],
+                "vs-mlrt-linux-x64-cuda-cu129.zip": ["vsmlrt/libcudart.so", "vsmlrt/libcublas.so"],
                 "vs-mlrt-linux-x64-cudnn-cu129.zip": ["vsmlrt/libcudnn.so"],
                 "vs-mlrt-linux-x64-tensorrt-builder-cu129.zip": ["vsmlrt/vsmlrt-cuda/trtexec", "vsmlrt/vsmlrt-cuda/trtexec-build.json", "vsmlrt/libnvinfer_builder_resource.so"],
             }.items():
