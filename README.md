@@ -229,9 +229,8 @@ cu129 API4 payload directories.
   than a missing-loader claim.
 - Standard TRT API3 built an RTX 3090 Ti engine for AnimeJanai with the
   baseline TensorRT 10.14.1 `trtexec` and rendered a 128x128 RGBS frame. The
-  cu129 API4 user payload deliberately excludes build resources; a separate
-  full TensorRT 11.1 builder created a static 1x1x16x16 identity engine, then
-  the extracted `vstrt.so` runtime payload loaded it and rendered an exact
+  the cu129 API4 builder overlay created a static 1x1x16x16 identity engine,
+  then the extracted `vstrt.so` runtime payload loaded it and rendered an exact
   16x16 GrayS identity frame (`3550e6853d980fa61e6e0c9b0acb00e60f1594784ec83b46d5e977d0080f6f23`).
 - TensorRT-RTX built isolated engines and rendered all three model cases with
   the baseline 1.1.1 and cu129 API4 1.5.0 runtimes. AnimeJanai matched bytes.
