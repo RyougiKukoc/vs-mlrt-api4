@@ -70,6 +70,7 @@ jobs:
             git clone --depth 1 --branch "$trt_ref" https://github.com/NVIDIA/TensorRT.git deps/tensorrt-oss
             mkdir -p deps/tensorrt-oss/include/nlohmann && curl -fsSL -o deps/tensorrt-oss/include/nlohmann/json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/tags/v3.11.3/single_include/nlohmann/json.hpp
             python3 tools/build_custom_trtexec.py --source deps/tensorrt-oss --sdk deps/tensorrt --version "$trt_ver" --cuda "$cuda_root" --build-dir build/trtexec --install-dir build/trtexec-install
+            python3 tools/test_custom_trtexec.py --bin-dir build/trtexec-install/bin --runtime-dir deps/tensorrt/lib --runtime-dir "$cuda_root/lib64"
           fi
           if [[ "$VARIANT" == cu129 ]]; then curl -fsSL -o deps/rtx.tar.zst https://developer.nvidia.com/downloads/trt/rtx_sdk/secure/1.5/TensorRT-RTX-1.5.0.114-Linux-x86_64-cuda-12.9-Release-external.tar.zst && tar -xf deps/rtx.tar.zst -C deps && mv deps/TensorRT-RTX-* deps/tensorrt-rtx; fi
           export VSMLRT_VAPOURSYNTH_INCLUDE_DIRECTORY="$PWD/deps/vapoursynth/include"
@@ -90,13 +91,6 @@ jobs:
             python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
             if [[ "$VARIANT" == cu129 ]]; then python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component rtx --output vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip; fi
           fi
-      - name: Upload Linux assets
-        if: steps.select.outputs.build == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: vs-mlrt-linux-${{ matrix.variant }}
-          path: vs-mlrt-linux-x64-*.zip
-
       - name: Verify staged Linux payload
         if: steps.select.outputs.build == 'true'
         shell: bash
@@ -117,6 +111,14 @@ jobs:
           if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip"; fi
           VSMLRT_PAYLOAD_TAG="$VARIANT" VSMLRT_PREBUILT_PATHS="$paths" python3 -m pip install --break-system-packages --no-deps --force-reinstall --no-cache-dir .
           python3 tools/smoke_linux_vcs_install.py --variant "$VARIANT"
+
+      - name: Upload Linux assets
+        if: steps.select.outputs.build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vs-mlrt-linux-${{ matrix.variant }}
+          path: vs-mlrt-linux-x64-*.zip
+
       - name: Publish Linux assets
         if: steps.select.outputs.build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         uses: softprops/action-gh-release@v2
