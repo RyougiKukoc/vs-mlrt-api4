@@ -20,12 +20,17 @@ class LinuxPayloadTests(unittest.TestCase):
             (stage / "vsmlrt-cuda" / "trtexec-build.json").write_bytes(b"{}")
             runtime = Path(temp) / "runtime.zip"
             builder = Path(temp) / "builder.zip"
+            builder_tools = Path(temp) / "builder-tools.zip"
             subprocess.run([sys.executable, str(script), "--stage-dir", str(stage), "--variant", "cu129", "--component", "tensorrt", "--output", str(runtime)], check=True)
             subprocess.run([sys.executable, str(script), "--stage-dir", str(stage), "--variant", "cu129", "--component", "builder", "--output", str(builder)], check=True)
+            subprocess.run([sys.executable, str(script), "--stage-dir", str(stage), "--variant", "cu129", "--component", "builder-tools", "--output", str(builder_tools)], check=True)
             with zipfile.ZipFile(runtime) as archive:
                 self.assertNotIn("vsmlrt/libnvinfer_builder_resource.so.11", archive.namelist())
             with zipfile.ZipFile(builder) as archive:
                 self.assertIn("vsmlrt/libnvinfer_builder_resource.so.11", archive.namelist())
+                self.assertIn("vsmlrt/vsmlrt-cuda/trtexec", archive.namelist())
+            with zipfile.ZipFile(builder_tools) as archive:
+                self.assertNotIn("vsmlrt/libnvinfer_builder_resource.so.11", archive.namelist())
                 self.assertIn("vsmlrt/vsmlrt-cuda/trtexec", archive.namelist())
 
 

@@ -54,6 +54,8 @@ def verify(variant: str, asset_dir: Path) -> None:
         asset_dir / f"vs-mlrt-linux-x64-cudnn-{variant}.zip",
         asset_dir / f"vs-mlrt-linux-x64-tensorrt-builder-{variant}.zip",
     ]
+    if variant == "cu129":
+        assets.extend(asset_dir / f"vs-mlrt-linux-x64-tensorrt-builder-resource-{index}-cu129.zip" for index in range(1, 5))
     for asset in assets:
         if not asset.is_file():
             raise RuntimeError(f"Missing Linux {variant} payload: {asset}")

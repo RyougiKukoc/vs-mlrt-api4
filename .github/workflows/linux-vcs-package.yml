@@ -93,9 +93,23 @@ jobs:
             for component in tensorrt cuda cudnn; do
               python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component "$component" --output "vs-mlrt-linux-x64-$component-$VARIANT.zip"
             done
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
+            if [[ "$VARIANT" == cu129 ]]; then
+              python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder-tools --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
+              for index in 1 2 3 4; do
+                python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder-resource --resource-index "$index" --output "vs-mlrt-linux-x64-tensorrt-builder-resource-$index-cu129.zip"
+              done
+            else
+              python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
+            fi
             if [[ "$VARIANT" == cu129 ]]; then python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component rtx --output vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip; fi
           fi
+          for asset in vs-mlrt-linux-x64-*.zip; do
+            size=$(stat -c%s "$asset")
+            if (( size >= 2147483648 )); then
+              echo "Release asset exceeds GitHub's 2 GiB limit: $asset ($size bytes)" >&2
+              exit 1
+            fi
+          done
       - name: Verify staged Linux payload
         if: steps.select.outputs.build == 'true'
         shell: bash
@@ -112,6 +126,7 @@ jobs:
           paths="$PWD/vs-mlrt-linux-x64-generic.zip"
           if [[ "$VARIANT" != generic ]]; then
             paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cudnn-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
+            if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip"; fi
           fi
           if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip"; fi
           VSMLRT_PAYLOAD_TAG="$VARIANT" VSMLRT_PREBUILT_PATHS="$paths" python3 -m pip install --break-system-packages --no-deps --force-reinstall --no-cache-dir .

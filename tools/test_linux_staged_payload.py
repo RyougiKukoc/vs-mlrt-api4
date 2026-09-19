@@ -37,7 +37,11 @@ class LinuxStagedPayloadTests(unittest.TestCase):
                 "vs-mlrt-linux-x64-tensorrt-cu129.zip": ["vsmlrt/vstrt.so", "vsmlrt/manifest.vs", "vsmlrt/libnvinfer.so", "vsmlrt/libnvinfer_plugin.so", "vsmlrt/libnvonnxparser.so"],
                 "vs-mlrt-linux-x64-cuda-cu129.zip": ["vsmlrt/libcudart.so", "vsmlrt/libcublas.so"],
                 "vs-mlrt-linux-x64-cudnn-cu129.zip": ["vsmlrt/libcudnn.so"],
-                "vs-mlrt-linux-x64-tensorrt-builder-cu129.zip": ["vsmlrt/vsmlrt-cuda/trtexec", "vsmlrt/vsmlrt-cuda/trtexec-build.json", "vsmlrt/libnvinfer_builder_resource.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-cu129.zip": ["vsmlrt/vsmlrt-cuda/trtexec", "vsmlrt/vsmlrt-cuda/trtexec-build.json"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_1.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_2.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_3.so"],
+                "vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip": ["vsmlrt/libnvinfer_builder_resource_4.so"],
             }.items():
                 self.write_zip(root, name, members)
             with self.assertRaisesRegex(RuntimeError, "RTX"):

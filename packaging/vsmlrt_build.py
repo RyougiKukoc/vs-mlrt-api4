@@ -298,8 +298,16 @@ class CustomBuildHook(BuildHookInterface):
                 )
                 tags.extend([payload_tag] * 4)
                 if payload_tag == "cu129":
-                    assets.append("vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip")
-                    tags.append(payload_tag)
+                    assets.extend(
+                        [
+                            "vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip",
+                            "vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip",
+                            "vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip",
+                            "vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip",
+                            "vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip",
+                        ]
+                    )
+                    tags.extend([payload_tag] * 5)
         else:
             raise RuntimeError(f"No tested release payload exists for {system} {platform.machine()}.")
         return self._download_urls(
