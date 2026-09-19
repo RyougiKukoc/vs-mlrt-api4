@@ -22,6 +22,14 @@ def members(path: Path) -> set[str]:
         return names
 
 
+def manifest(path: Path) -> list[str]:
+    with zipfile.ZipFile(path) as archive:
+        try:
+            return archive.read("vsmlrt/manifest.vs").decode("ascii").splitlines()
+        except KeyError as error:
+            raise RuntimeError(f"Linux plugin payload has no manifest.vs: {path.name}") from error
+
+
 def verify(variant: str, asset_dir: Path) -> None:
     generic = asset_dir / "vs-mlrt-linux-x64-generic.zip"
     if not generic.is_file():
@@ -30,6 +38,8 @@ def verify(variant: str, asset_dir: Path) -> None:
     required_generic = {"vsmlrt/vsncnn.so", "vsmlrt/vsov.so", "vsmlrt/manifest.vs"}
     if not required_generic.issubset(generic_names):
         raise RuntimeError(f"Generic payload is missing: {sorted(required_generic - generic_names)}")
+    if manifest(generic) != ["[VapourSynth Manifest V1]", "vsncnn", "vsov"]:
+        raise RuntimeError(f"Generic manifest is incorrect: {manifest(generic)!r}")
 
     if variant == "generic":
         forbidden = [name for name in generic_names if name.startswith("vsmlrt/vsmlrt-cuda/")]
@@ -51,6 +61,10 @@ def verify(variant: str, asset_dir: Path) -> None:
             raise RuntimeError(f"Missing Linux {variant} payload: {asset}")
         names.update(members(asset))
 
+    trt_asset = assets[0]
+    if manifest(trt_asset) != ["[VapourSynth Manifest V1]", "vstrt"]:
+        raise RuntimeError(f"TensorRT manifest is incorrect: {manifest(trt_asset)!r}")
+
     required = {
         "vsmlrt/vstrt.so",
         "vsmlrt/vsmlrt-cuda/trtexec",
@@ -68,6 +82,8 @@ def verify(variant: str, asset_dir: Path) -> None:
         if not rtx.is_file():
             raise RuntimeError(f"Missing Linux cu129 RTX payload: {rtx}")
         rtx_names = members(rtx)
+        if manifest(rtx) != ["[VapourSynth Manifest V1]", "vstrt_rtx"]:
+            raise RuntimeError(f"TensorRT-RTX manifest is incorrect: {manifest(rtx)!r}")
         required_rtx = {"vsmlrt/vstrt_rtx.so", "vsmlrt/vsmlrt-cuda/tensorrt_rtx"}
         if not required_rtx.issubset(rtx_names):
             raise RuntimeError(f"Linux cu129 RTX payload is missing: {sorted(required_rtx - rtx_names)}")

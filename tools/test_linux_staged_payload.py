@@ -17,7 +17,10 @@ class LinuxStagedPayloadTests(unittest.TestCase):
     def write_zip(self, root: Path, name: str, members: list[str]) -> None:
         with zipfile.ZipFile(root / name, "w") as archive:
             for member in members:
-                archive.writestr(member, b"payload")
+                content = b"payload"
+                if member.endswith("manifest.vs"):
+                    content = b"[VapourSynth Manifest V1]\nvsncnn\nvsov\n" if "generic" in name else b"[VapourSynth Manifest V1]\nvstrt\n"
+                archive.writestr(member, content)
 
     def test_generic_rejects_cuda_member(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -31,7 +34,7 @@ class LinuxStagedPayloadTests(unittest.TestCase):
             root = Path(temp)
             self.write_zip(root, "vs-mlrt-linux-x64-generic.zip", ["vsmlrt/vsncnn.so", "vsmlrt/vsov.so", "vsmlrt/manifest.vs"])
             for name, members in {
-                "vs-mlrt-linux-x64-tensorrt-cu129.zip": ["vsmlrt/vstrt.so"],
+                "vs-mlrt-linux-x64-tensorrt-cu129.zip": ["vsmlrt/vstrt.so", "vsmlrt/manifest.vs"],
                 "vs-mlrt-linux-x64-cuda-cu129.zip": ["vsmlrt/libcudart.so"],
                 "vs-mlrt-linux-x64-cudnn-cu129.zip": ["vsmlrt/libcudnn.so"],
                 "vs-mlrt-linux-x64-tensorrt-builder-cu129.zip": ["vsmlrt/vsmlrt-cuda/trtexec", "vsmlrt/vsmlrt-cuda/trtexec-build.json", "vsmlrt/libnvinfer_builder_resource.so"],
