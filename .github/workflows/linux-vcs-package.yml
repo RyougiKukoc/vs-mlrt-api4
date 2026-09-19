@@ -38,7 +38,7 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
       - name: Install build tools
         if: steps.select.outputs.build == 'true'
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl unzip git zstd
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl unzip git zstd xz-utils
       - name: Build native Linux payload
         if: steps.select.outputs.build == 'true'
         shell: bash
@@ -63,9 +63,10 @@ jobs:
           cmake --build deps/onnx/build --parallel && cmake --install deps/onnx/build --prefix deps/onnx/install
           curl -fsSL -o deps/ncnn.zip https://github.com/Tencent/ncnn/releases/download/20250503/ncnn-20250503-ubuntu-2404.zip && unzip -q deps/ncnn.zip -d deps
           curl -fsSL -o deps/openvino.tgz https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.6/linux/l_openvino_toolkit_ubuntu24_2024.6.0.17404.4c0f47d2335_x86_64.tgz && tar -xzf deps/openvino.tgz -C deps && mv deps/l_openvino_* deps/openvino
-          if [[ "$VARIANT" == cu121 ]]; then trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/secure/8.6.1/tars/TensorRT-8.6.1.6.Linux.x86_64-gnu.cuda-12.0.tar.gz; trt_ref=v8.6.1; trt_ver=8.6.1.6; cuda_root=/usr/local/cuda-12.1; else trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.1.0/tars/TensorRT-Enterprise-11.1.0.106-Linux-x86_64-cuda-12.9-Release-external.tar.zst; trt_ref=v11.1; trt_ver=11.1.0.106; cuda_root=/usr/local/cuda-12.9; fi
+          if [[ "$VARIANT" == cu121 ]]; then trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/secure/8.6.1/tars/TensorRT-8.6.1.6.Linux.x86_64-gnu.cuda-12.0.tar.gz; trt_ref=v8.6.1; trt_ver=8.6.1.6; cuda_root=/usr/local/cuda-12.1; cudnn_url=https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-8.9.7.29_cuda12-archive.tar.xz; else trt_url=https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/11.1.0/tars/TensorRT-Enterprise-11.1.0.106-Linux-x86_64-cuda-12.9-Release-external.tar.zst; trt_ref=v11.1; trt_ver=11.1.0.106; cuda_root=/usr/local/cuda-12.9; cudnn_url=https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-9.19.0.56_cuda12-archive.tar.xz; fi
           if [[ "$VARIANT" != generic ]]; then
             curl -fsSL -o deps/tensorrt.archive "$trt_url" && tar -xf deps/tensorrt.archive -C deps && mv deps/TensorRT-* deps/tensorrt
+            curl -fsSL -o deps/cudnn.tar.xz "$cudnn_url" && tar -xJf deps/cudnn.tar.xz -C deps && mv deps/cudnn-linux-* deps/cudnn
             git clone --depth 1 --branch "$trt_ref" https://github.com/NVIDIA/TensorRT.git deps/tensorrt-oss
             mkdir -p deps/tensorrt-oss/include/nlohmann && curl -fsSL -o deps/tensorrt-oss/include/nlohmann/json.hpp https://raw.githubusercontent.com/nlohmann/json/refs/tags/v3.11.3/single_include/nlohmann/json.hpp
             python3 tools/build_custom_trtexec.py --source deps/tensorrt-oss --sdk deps/tensorrt --version "$trt_ver" --cuda "$cuda_root" --build-dir build/trtexec --install-dir build/trtexec-install
@@ -77,7 +78,7 @@ jobs:
           export VSMLRT_PROTOBUF_DIR="$PWD/deps/protobuf/install/lib/cmake/protobuf"
           export VSMLRT_OPENVINO_DIR="$PWD/deps/openvino/runtime/cmake"
           export VSMLRT_RUNTIME_ROOTS="$PWD/deps/ncnn-20250503-ubuntu-2404/lib:$PWD/deps/openvino/runtime:$PWD/deps/onnx/install/lib:$PWD/deps/protobuf/install/lib"
-          if [[ "$VARIANT" != generic ]]; then export CUDAToolkit_ROOT="$cuda_root" VSMLRT_TENSORRT_HOME="$PWD/deps/tensorrt" VSMLRT_TRTEXEC_PATH="$PWD/build/trtexec-install/bin/trtexec" VSMLRT_TRTEXEC_BUILD_METADATA="$PWD/build/trtexec-install/bin/trtexec-build.json" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$cuda_root/lib64:$PWD/deps/tensorrt/lib"; fi
+          if [[ "$VARIANT" != generic ]]; then export CUDAToolkit_ROOT="$cuda_root" VSMLRT_TENSORRT_HOME="$PWD/deps/tensorrt" VSMLRT_TRTEXEC_PATH="$PWD/build/trtexec-install/bin/trtexec" VSMLRT_TRTEXEC_BUILD_METADATA="$PWD/build/trtexec-install/bin/trtexec-build.json" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$cuda_root/lib64:$PWD/deps/tensorrt/lib:$PWD/deps/cudnn/lib"; fi
           if [[ "$VARIANT" == cu129 ]]; then export VSMLRT_TENSORRT_RTX_HOME="$PWD/deps/tensorrt-rtx" VSMLRT_TENSORRT_RTX_PATH="$PWD/deps/tensorrt-rtx/bin/tensorrt_rtx" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$PWD/deps/tensorrt-rtx/lib"; fi
           python3 packaging/linux_native_build.py --variant "$VARIANT" --stage-dir "build/payload-$VARIANT"
           if [[ "$VARIANT" == generic ]]; then

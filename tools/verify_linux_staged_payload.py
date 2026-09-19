@@ -58,6 +58,8 @@ def verify(variant: str, asset_dir: Path) -> None:
     }
     if not required.issubset(names):
         raise RuntimeError(f"Linux {variant} payload is missing: {sorted(required - names)}")
+    if not any(name.startswith("vsmlrt/libcudnn") for name in names):
+        raise RuntimeError(f"Linux {variant} payload is missing the cuDNN library family")
     if not any("builder_resource" in name for name in names):
         raise RuntimeError(f"Linux {variant} payload is missing TensorRT builder resources")
 
