@@ -52,10 +52,8 @@ def verify(variant: str, asset_dir: Path) -> None:
         asset_dir / f"vs-mlrt-linux-x64-tensorrt-{variant}.zip",
         asset_dir / f"vs-mlrt-linux-x64-cuda-{variant}.zip",
         asset_dir / f"vs-mlrt-linux-x64-cudnn-{variant}.zip",
-        asset_dir / f"vs-mlrt-linux-x64-builder-{variant}.zip",
+        asset_dir / f"vs-mlrt-linux-x64-tensorrt-builder-{variant}.zip",
     ]
-    # The public asset name includes the TensorRT qualifier.
-    assets[-1] = asset_dir / f"vs-mlrt-linux-x64-tensorrt-builder-{variant}.zip"
     for asset in assets:
         if not asset.is_file():
             raise RuntimeError(f"Missing Linux {variant} payload: {asset}")

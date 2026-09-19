@@ -61,7 +61,7 @@ The build hooks download these assets from GitHub Releases:
 | --- | --- |
 | `models` | `models.zip` |
 | `generic` | `vs-mlrt-windows-x64-generic.zip`, `vs-mlrt-linux-x64-generic.zip` |
-| `cu121` | `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`, plus matching Linux assets |
+| `cu121` | Windows `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`; Linux `vs-mlrt-linux-x64-tensorrt-cu121.zip`, `vs-mlrt-linux-x64-cuda-cu121.zip`, `vs-mlrt-linux-x64-cudnn-cu121.zip`, `vs-mlrt-linux-x64-tensorrt-builder-cu121.zip` |
 | `cu129` | Windows standard, split TensorRT, CUDA, builder, and RTX assets, plus matching Linux standard, CUDA, cuDNN, builder, and RTX assets |
 
 All native payload zips are rooted at `vsmlrt/`. After pip installation, the
