@@ -253,7 +253,8 @@ hook:
   `vs-mlrt-linux-x64-generic.zip`.
 - `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip`,
   `vs-mlrt-windows-x64-cuda-cu121.zip`, and
-  `vs-mlrt-windows-x64-cudnn-cu121.zip`, plus
+  `vs-mlrt-windows-x64-cudnn-cu121.zip`,
+  `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`, plus
   `vs-mlrt-linux-x64-tensorrt-cu121.zip`,
   `vs-mlrt-linux-x64-cuda-cu121.zip`,
   `vs-mlrt-linux-x64-cudnn-cu121.zip`, and
@@ -261,6 +262,10 @@ hook:
 - `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`,
   `vs-mlrt-windows-x64-cuda-cu129.zip`,
   `vs-mlrt-windows-x64-cudnn-cu129.zip`,
+  `vs-mlrt-windows-x64-tensorrt-builder-cu129.zip`,
+  `vs-mlrt-windows-x64-tensorrt-builder-resource-1-cu129.zip`,
+  `vs-mlrt-windows-x64-tensorrt-builder-resource-2-cu129.zip`,
+  `vs-mlrt-windows-x64-tensorrt-builder-resource-3-cu129.zip`,
   `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`,
   `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`,
   `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, and
@@ -270,6 +275,10 @@ hook:
   `vs-mlrt-linux-x64-cudnn-cu129.zip`,
   `vs-mlrt-linux-x64-tensorrt-builder-cu129.zip`, and
   `vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`.
+
+The Windows TensorRT 11.1 builder resources are split into three overlays
+because their combined size is larger than GitHub's 2 GiB per-asset limit.
+The build hook downloads all three overlays for `@cu129`.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN

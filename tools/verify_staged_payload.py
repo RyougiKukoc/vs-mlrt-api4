@@ -66,17 +66,18 @@ def staged_names(variant: str) -> list[str]:
     result = [f"vs-mlrt-windows-x64-{part}-{variant}.zip" for part in ["tensorrt", "cuda", "cudnn"]]
     result.append(f"vs-mlrt-windows-x64-tensorrt-builder-{variant}.zip")
     if variant == "cu129":
+        result.extend(f"vs-mlrt-windows-x64-tensorrt-builder-resource-{index}-cu129.zip" for index in range(1, 4))
         result.extend(f"vs-mlrt-windows-x64-tensorrt-{part}-cu129.zip" for part in ["core", "plugin", "extra", "rtx"])
     return result
 
 
 def verify_installed(paths: list[Path], site: Path) -> int:
     count = 0
+    builder_resource_found = False
     for path in paths:
         with zipfile.ZipFile(path) as archive:
             names = [info.filename.replace("\\", "/") for info in archive.infolist() if not info.is_dir()]
-            if "tensorrt-builder" in path.name and not any("builder_resource" in name.lower() for name in names):
-                raise RuntimeError(f"Builder payload is missing TensorRT builder resources: {path.name}")
+            builder_resource_found = builder_resource_found or any("builder_resource" in name.lower() for name in names)
             for member in archive.infolist():
                 if member.is_dir():
                     continue
@@ -94,6 +95,8 @@ def verify_installed(paths: list[Path], site: Path) -> int:
                 if not installed.is_file() or digest(installed) != expected:
                     raise RuntimeError(f"Installed payload differs from staged {path.name}: {rel}")
                 count += 1
+    if any("tensorrt-builder" in path.name for path in paths) and not builder_resource_found:
+        raise RuntimeError("Builder payload is missing TensorRT builder resources")
     return count
 
 

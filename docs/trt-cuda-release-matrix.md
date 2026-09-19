@@ -62,7 +62,7 @@ The build hooks download these assets from GitHub Releases:
 | `models` | `models.zip` |
 | `generic` | `vs-mlrt-windows-x64-generic.zip`, `vs-mlrt-linux-x64-generic.zip` |
 | `cu121` | Windows `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`; Linux `vs-mlrt-linux-x64-tensorrt-cu121.zip`, `vs-mlrt-linux-x64-cuda-cu121.zip`, `vs-mlrt-linux-x64-cudnn-cu121.zip`, `vs-mlrt-linux-x64-tensorrt-builder-cu121.zip` |
-| `cu129` | Windows standard, split TensorRT, CUDA, builder, and RTX assets, plus matching Linux standard, CUDA, cuDNN, builder, and RTX assets |
+| `cu129` | Windows standard, split TensorRT, CUDA, builder tool plus three builder-resource, and RTX assets, plus matching Linux standard, CUDA, cuDNN, builder, and RTX assets |
 
 All native payload zips are rooted at `vsmlrt/`. After pip installation, the
 selected payloads overlay into:
@@ -77,7 +77,9 @@ Important layout details:
 - CUDA payloads place CUDA, cuDNN, TensorRT, and helper executables under
   `vsmlrt/vsmlrt-cuda/`.
 - Builder overlays contain `trtexec`, its provenance JSON, and TensorRT builder
-  resources required by public `Backend.TRT` ONNX conversion.
+  resources required by public `Backend.TRT` ONNX conversion. Windows `cu129`
+  publishes the tool overlay plus three resource overlays because TensorRT
+  11.1's resource DLLs exceed GitHub's 2 GiB per-asset limit.
 - `vstrt.dll` lives at the plugin root. `vstrt_rtx.dll` is installed only by
   `cu129`.
 - `generic` contains no CUDA, TensorRT, ORT, or DirectML payload. It contains

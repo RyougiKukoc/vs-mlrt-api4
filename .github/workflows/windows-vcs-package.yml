@@ -328,8 +328,28 @@ jobs:
           Copy-DllsFromPackage "cudnn" $cudnnPayloadDir -Recursive
           Copy-Item vstrt\trtexec-install\bin\trtexec.exe $builderCudaDir
           Copy-Item vstrt\trtexec-install\bin\trtexec-build.json $builderCudaDir
-          Get-ChildItem -LiteralPath tensorrt -Recurse -Filter "*builder_resource*.dll" -File |
-            Copy-Item -Destination $builderCudaDir -Force
+          $builderResources = @(Get-ChildItem -LiteralPath tensorrt -Recurse -Filter "*builder_resource*.dll" -File | Sort-Object Name)
+          if ($builderResources.Count -eq 0) {
+            throw "TensorRT package contains no builder resource DLLs."
+          }
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            # TensorRT 11.1 ships about 3.45 GiB of architecture-specific
+            # builder resources. Three size-balanced overlays keep every asset
+            # comfortably below GitHub's 2 GiB per-asset limit.
+            for ($index = 1; $index -le 3; $index++) {
+              New-Item -ItemType Directory -Force "payload-builder-resource-$index\vsmlrt\vsmlrt-cuda" | Out-Null
+            }
+            $resourceBytes = @(0, 0, 0)
+            foreach ($resource in ($builderResources | Sort-Object Length -Descending)) {
+              $slot = 0
+              if ($resourceBytes[1] -lt $resourceBytes[$slot]) { $slot = 1 }
+              if ($resourceBytes[2] -lt $resourceBytes[$slot]) { $slot = 2 }
+              Copy-Item -LiteralPath $resource.FullName -Destination "payload-builder-resource-$($slot + 1)\vsmlrt\vsmlrt-cuda" -Force
+              $resourceBytes[$slot] += [int64]$resource.Length
+            }
+          } else {
+            $builderResources | Copy-Item -Destination $builderCudaDir -Force
+          }
 
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $trtCoreCudaDir = "payload-trt-core\vsmlrt\vsmlrt-cuda"
@@ -393,7 +413,13 @@ jobs:
           foreach ($path in @("payload-builder\vsmlrt\vsmlrt-cuda\trtexec.exe", "payload-builder\vsmlrt\vsmlrt-cuda\trtexec-build.json")) {
             if (-not (Test-Path $path)) { throw "Missing builder payload item: $path" }
           }
-          if (-not (Get-ChildItem "payload-builder\vsmlrt\vsmlrt-cuda" -Filter "*builder_resource*.dll" -File -ErrorAction SilentlyContinue)) {
+          if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            foreach ($index in 1..3) {
+              if (-not (Get-ChildItem "payload-builder-resource-$index\vsmlrt\vsmlrt-cuda" -Filter "*builder_resource*.dll" -File -ErrorAction SilentlyContinue)) {
+                throw "Builder resource overlay $index is empty."
+              }
+            }
+          } elseif (-not (Get-ChildItem "payload-builder\vsmlrt\vsmlrt-cuda" -Filter "*builder_resource*.dll" -File -ErrorAction SilentlyContinue)) {
             throw "Builder payload is missing TensorRT builder resources."
           }
           $manifest = Get-Content "payload-base\vsmlrt\manifest.vs"
@@ -432,6 +458,9 @@ jobs:
           7z a -tzip -mx=0 "vs-mlrt-windows-x64-cudnn-${{ matrix.cuda_flavor }}.zip" .\payload-cudnn\*
           7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-builder-${{ matrix.cuda_flavor }}.zip" .\payload-builder\*
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
+            foreach ($index in 1..3) {
+              7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-builder-resource-$index-cu129.zip" ".\payload-builder-resource-$index\*"
+            }
             7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-core-cu129.zip" .\payload-trt-core\*
             7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip" .\payload-trt-plugin\*
             7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-extra-cu129.zip" .\payload-trt-extra\*

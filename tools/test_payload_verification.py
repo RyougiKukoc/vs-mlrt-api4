@@ -19,6 +19,14 @@ class PayloadTests(unittest.TestCase):
     def test_cuda_variants_include_builder_asset(self):
         self.assertIn("vs-mlrt-windows-x64-tensorrt-builder-cu121.zip", verify.staged_names("cu121"))
         self.assertIn("vs-mlrt-windows-x64-tensorrt-builder-cu129.zip", verify.staged_names("cu129"))
+        self.assertEqual(
+            [name for name in verify.staged_names("cu129") if "builder-resource" in name],
+            [
+                "vs-mlrt-windows-x64-tensorrt-builder-resource-1-cu129.zip",
+                "vs-mlrt-windows-x64-tensorrt-builder-resource-2-cu129.zip",
+                "vs-mlrt-windows-x64-tensorrt-builder-resource-3-cu129.zip",
+            ],
+        )
 
     def test_installed_bytes_and_intentional_openvino_layout(self):
         with tempfile.TemporaryDirectory() as tmp:

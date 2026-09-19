@@ -274,13 +274,16 @@ class CustomBuildHook(BuildHookInterface):
                 if payload_tag == "cu129":
                     assets.extend(
                         [
+                            "vs-mlrt-windows-x64-tensorrt-builder-resource-1-cu129.zip",
+                            "vs-mlrt-windows-x64-tensorrt-builder-resource-2-cu129.zip",
+                            "vs-mlrt-windows-x64-tensorrt-builder-resource-3-cu129.zip",
                             "vs-mlrt-windows-x64-tensorrt-core-cu129.zip",
                             "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip",
                             "vs-mlrt-windows-x64-tensorrt-extra-cu129.zip",
                             "vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip",
                         ]
                     )
-                    tags.extend([payload_tag] * 4)
+                    tags.extend([payload_tag] * 7)
         elif system == "Linux":
             assets = ["vs-mlrt-linux-x64-generic.zip"]
             tags = [GENERIC_TAG]
