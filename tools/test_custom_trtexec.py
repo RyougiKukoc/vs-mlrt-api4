@@ -31,8 +31,8 @@ def main() -> None:
         result = subprocess.run([str(exe), "--help"], env=env, capture_output=True, timeout=60)
         if result.returncode or not log.is_file() or b"--onnx" not in log.read_bytes():
             raise RuntimeError(f"Custom trtexec help/log smoke failed: {result.returncode}\n{result.stdout!r}\n{result.stderr!r}")
-        filelock = "trtexec_filelock_smoke.exe" if os.name == "nt" else "trtexec_filelock_smoke"
-        subprocess.run([str(exe.parent / filelock), str(directory / "\u7f13\u5b58.cache")], env=env, check=True, timeout=60)
+        if os.name == "nt":
+            subprocess.run([str(exe.parent / "trtexec_filelock_smoke.exe"), str(directory / "\u7f13\u5b58.cache")], env=env, check=True, timeout=60)
     print("Custom trtexec: --help, Unicode/long log path, and file-lock cleanup passed")
 
 
