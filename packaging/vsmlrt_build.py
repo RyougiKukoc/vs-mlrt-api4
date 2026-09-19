@@ -309,7 +309,7 @@ class CustomBuildHook(BuildHookInterface):
                             "vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip",
                         ]
                     )
-                    tags.extend([payload_tag] * 5)
+                    tags.extend([payload_tag] * 9)
         else:
             raise RuntimeError(f"No tested release payload exists for {system} {platform.machine()}.")
         return self._download_urls(
