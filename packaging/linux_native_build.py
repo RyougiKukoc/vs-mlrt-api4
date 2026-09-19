@@ -164,7 +164,11 @@ def main() -> None:
     ncnn_args = [f"-DVAPOURSYNTH_INCLUDE_DIRECTORY={headers}", f"-Dncnn_DIR={ncnn_dir}", f"-DONNX_DIR={onnx_dir}", f"-Dprotobuf_DIR={protobuf_dir}"]
     cmake_build(ROOT / "vsncnn", build_root / "vsncnn", build_root / "install-vsncnn", ncnn_args, env)
     shutil.copy2(find_library(build_root / "install-vsncnn", "libvsncnn"), stage / f"vsncnn{native_suffix}")
-    generic_args = [f"-DVAPOURSYNTH_INCLUDE_DIRECTORY={headers}"]
+    generic_args = [
+        f"-DVAPOURSYNTH_INCLUDE_DIRECTORY={headers}",
+        f"-DONNX_DIR={onnx_dir}",
+        f"-Dprotobuf_DIR={protobuf_dir}",
+    ]
     if openvino_dir:
         generic_args.append(f"-DOpenVINO_DIR={openvino_dir}")
     cmake_build(ROOT / "vsov", build_root / "vsov", build_root / "install-vsov", generic_args, env)
