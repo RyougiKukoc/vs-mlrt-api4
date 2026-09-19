@@ -17,8 +17,8 @@ Required repairs:
    TensorRT-RTX 1.5.0.114 Linux CUDA 12.9 archive as a `.tar.zst`.
 4. Both CUDA refs must publish a dedicated builder overlay containing the
    version-matched `trtexec`, provenance JSON, and TensorRT builder resources.
-   Linux CUDA overlays also split oversized cuDNN and cu129 builder-resource
-   payloads into separate assets under GitHub's 2 GiB limit.
+   Linux CUDA overlays also split oversized CUDA/cuDNN and cu129
+   builder-resource payloads into separate assets under GitHub's 2 GiB limit.
    `Backend.TRT` invokes `trtexec` to convert ONNX; host PATH fallback is not a
    complete VCS installation.
 

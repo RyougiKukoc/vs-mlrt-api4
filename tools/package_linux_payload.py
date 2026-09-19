@@ -15,7 +15,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage-dir", type=Path, required=True)
     parser.add_argument("--variant", choices=["generic", "cu121", "cu129"], required=True)
-    parser.add_argument("--component", choices=["generic", "tensorrt", "cuda", "cudnn", "cudnn-part", "builder", "builder-tools", "builder-resource", "rtx", "all"], default="all")
+    parser.add_argument("--component", choices=["generic", "tensorrt", "cuda", "cuda-part", "cudnn", "cudnn-part", "builder", "builder-tools", "builder-resource", "rtx", "all"], default="all")
     parser.add_argument("--resource-index", type=int, choices=[1, 2, 3, 4])
     parser.add_argument("--part-index", type=int, choices=[1, 2])
     parser.add_argument("--output", type=Path, required=True)
@@ -51,12 +51,22 @@ def main() -> None:
         cudnn_slots[slot].append(name)
         cudnn_sizes[slot] += path.stat().st_size
     selected_cudnn = set(cudnn_slots[(args.part_index or 1) - 1])
+    cuda_prefixes = ("libcublas", "libcudart", "libcufft", "libnvblas", "libnvrtc", "libnvJitLink", "libnvvm")
+    cuda_files = sorted((name, path) for name, path in files.items() if PurePosixPath(name).name.startswith(cuda_prefixes))
+    cuda_slots: list[list[str]] = [[], []]
+    cuda_sizes = [0, 0]
+    for name, path in sorted(cuda_files, key=lambda item: item[1].stat().st_size, reverse=True):
+        slot = min(range(2), key=cuda_sizes.__getitem__)
+        cuda_slots[slot].append(name)
+        cuda_sizes[slot] += path.stat().st_size
+    selected_cuda = set(cuda_slots[(args.part_index or 1) - 1])
 
     def keep(name: str) -> bool:
         base = PurePosixPath(name).name
         if args.component == "generic": return base in {"vsncnn.so", "vsov.so", "manifest.vs"} or base.startswith(("libopenvino", "libtbb", "libonnx", "libprotobuf", "libncnn"))
         if args.component == "tensorrt": return base == "vstrt.so" or (base.startswith(("libnvinfer", "libnvonnxparser", "libnvparsers")) and "builder_resource" not in base)
-        if args.component == "cuda": return base.startswith(("libcublas", "libcudart", "libcufft", "libnvblas", "libnvrtc", "libnvJitLink", "libnvvm"))
+        if args.component == "cuda": return base.startswith(cuda_prefixes) and (args.part_index is None or name in selected_cuda)
+        if args.component == "cuda-part": return base.startswith(cuda_prefixes) and name in selected_cuda
         if args.component == "cudnn": return base.startswith("libcudnn") and (args.part_index is None or name in selected_cudnn)
         if args.component == "cudnn-part": return base.startswith("libcudnn") and name in selected_cudnn
         if args.component == "builder": return name in {"vsmlrt-cuda/trtexec", "vsmlrt-cuda/trtexec-build.json"} or "builder_resource" in base
