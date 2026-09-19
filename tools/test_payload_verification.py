@@ -47,6 +47,15 @@ class PayloadTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "differs from staged"):
                 verify.verify_installed([archive], root / "site")
 
+    def test_builder_payload_requires_builder_resource(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "vs-mlrt-windows-x64-tensorrt-builder-cu121.zip"
+            with zipfile.ZipFile(archive, "w") as out:
+                out.writestr("vsmlrt/vsmlrt-cuda/trtexec.exe", b"builder")
+            with self.assertRaisesRegex(RuntimeError, "builder resources"):
+                verify.verify_installed([archive], root / "site")
+
     def test_publication_requires_tested_payload_digest(self):
         with tempfile.TemporaryDirectory() as tmp:
             evidence = Path(tmp) / "evidence.json"

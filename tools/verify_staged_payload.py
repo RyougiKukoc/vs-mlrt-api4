@@ -74,6 +74,9 @@ def verify_installed(paths: list[Path], site: Path) -> int:
     count = 0
     for path in paths:
         with zipfile.ZipFile(path) as archive:
+            names = [info.filename.replace("\\", "/") for info in archive.infolist() if not info.is_dir()]
+            if "tensorrt-builder" in path.name and not any("builder_resource" in name.lower() for name in names):
+                raise RuntimeError(f"Builder payload is missing TensorRT builder resources: {path.name}")
             for member in archive.infolist():
                 if member.is_dir():
                     continue
