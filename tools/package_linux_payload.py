@@ -60,7 +60,11 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(args.output, "w", compression=zipfile.ZIP_STORED) as archive:
         for name, source in sorted(payload.items()):
-            archive.write(source, str(PurePosixPath("vsmlrt") / name))
+            archive_name = str(PurePosixPath("vsmlrt") / name)
+            if isinstance(source, bytes):
+                archive.writestr(archive_name, source)
+            else:
+                archive.write(source, archive_name)
     inventory = {"variant": args.variant, "component": args.component, "asset": args.output.name, "sha256": digest(args.output), "files": sorted(f"vsmlrt/{n}" for n in payload)}
     if args.inventory: args.inventory.write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(inventory, indent=2))
