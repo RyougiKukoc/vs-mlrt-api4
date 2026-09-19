@@ -101,6 +101,22 @@ jobs:
         if: steps.select.outputs.build == 'true'
         shell: bash
         run: python3 tools/verify_linux_staged_payload.py --variant "${{ matrix.variant }}" --asset-dir .
+
+      - name: Install and verify staged Linux VCS wheel
+        if: steps.select.outputs.build == 'true'
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euxo pipefail
+          python3 -m pip install --break-system-packages "vapoursynth==79" numpy onnx onnxconverter-common
+          paths="$PWD/vs-mlrt-linux-x64-generic.zip"
+          if [[ "$VARIANT" != generic ]]; then
+            paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cudnn-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
+          fi
+          if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip"; fi
+          VSMLRT_PAYLOAD_TAG="$VARIANT" VSMLRT_PREBUILT_PATHS="$paths" python3 -m pip install --break-system-packages --no-deps --force-reinstall --no-cache-dir .
+          python3 tools/smoke_linux_vcs_install.py --variant "$VARIANT"
       - name: Publish Linux assets
         if: steps.select.outputs.build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         uses: softprops/action-gh-release@v2
