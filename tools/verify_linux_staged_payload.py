@@ -51,9 +51,9 @@ def verify(variant: str, asset_dir: Path) -> None:
     assets = [
         asset_dir / f"vs-mlrt-linux-x64-tensorrt-{variant}.zip",
         asset_dir / f"vs-mlrt-linux-x64-cuda-{variant}.zip",
-        asset_dir / f"vs-mlrt-linux-x64-cuda-part-2-{variant}.zip",
+        asset_dir / f"vs-mlrt-linux-x64-cuda-{variant}-part-2.zip",
         asset_dir / f"vs-mlrt-linux-x64-cudnn-{variant}.zip",
-        asset_dir / f"vs-mlrt-linux-x64-cudnn-part-2-{variant}.zip",
+        asset_dir / f"vs-mlrt-linux-x64-cudnn-{variant}-part-2.zip",
         asset_dir / f"vs-mlrt-linux-x64-tensorrt-builder-{variant}.zip",
     ]
     if variant == "cu129":

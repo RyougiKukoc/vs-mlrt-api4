@@ -92,9 +92,9 @@ jobs:
           else
             python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component tensorrt --output "vs-mlrt-linux-x64-tensorrt-$VARIANT.zip"
             python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cuda --part-index 1 --output "vs-mlrt-linux-x64-cuda-$VARIANT.zip"
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cuda-part --part-index 2 --output "vs-mlrt-linux-x64-cuda-part-2-$VARIANT.zip"
+            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cuda-part --part-index 2 --output "vs-mlrt-linux-x64-cuda-$VARIANT-part-2.zip"
             python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cudnn --part-index 1 --output "vs-mlrt-linux-x64-cudnn-$VARIANT.zip"
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cudnn-part --part-index 2 --output "vs-mlrt-linux-x64-cudnn-part-2-$VARIANT.zip"
+            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cudnn-part --part-index 2 --output "vs-mlrt-linux-x64-cudnn-$VARIANT-part-2.zip"
             if [[ "$VARIANT" == cu129 ]]; then
               python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder-tools --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
               for index in 1 2 3 4 5 6 7 8; do
@@ -131,7 +131,7 @@ jobs:
           python3 -m pip install --break-system-packages "vapoursynth==79" numpy onnx onnxconverter-common
           paths="$PWD/vs-mlrt-linux-x64-generic.zip"
           if [[ "$VARIANT" != generic ]]; then
-            paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-part-2-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cudnn-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cudnn-part-2-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
+            paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-$VARIANT-part-2.zip:$PWD/vs-mlrt-linux-x64-cudnn-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cudnn-$VARIANT-part-2.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
             if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip"; fi
           fi
           if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip"; fi

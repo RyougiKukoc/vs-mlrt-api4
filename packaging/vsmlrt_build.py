@@ -292,9 +292,9 @@ class CustomBuildHook(BuildHookInterface):
                     [
                         f"vs-mlrt-linux-x64-tensorrt-{payload_tag}.zip",
                         f"vs-mlrt-linux-x64-cuda-{payload_tag}.zip",
-                        f"vs-mlrt-linux-x64-cuda-part-2-{payload_tag}.zip",
+                        f"vs-mlrt-linux-x64-cuda-{payload_tag}-part-2.zip",
                         f"vs-mlrt-linux-x64-cudnn-{payload_tag}.zip",
-                        f"vs-mlrt-linux-x64-cudnn-part-2-{payload_tag}.zip",
+                        f"vs-mlrt-linux-x64-cudnn-{payload_tag}-part-2.zip",
                         f"vs-mlrt-linux-x64-tensorrt-builder-{payload_tag}.zip",
                     ]
                 )
