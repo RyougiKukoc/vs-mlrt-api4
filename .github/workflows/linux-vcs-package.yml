@@ -50,7 +50,12 @@ jobs:
           if [[ "$VARIANT" != generic ]]; then
             curl -fsSL -o deps/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
             sudo dpkg -i deps/cuda-keyring.deb && sudo apt-get update
-            if [[ "$VARIANT" == cu121 ]]; then sudo apt-get install -y cuda-toolkit-12-1; else sudo apt-get install -y cuda-toolkit-12-9; fi
+            if [[ "$VARIANT" == cu121 ]]; then
+              curl -fsSL -o deps/cuda-12.1.run https://developer.download.nvidia.com/compute/cuda/12.1.1/local_installers/cuda_12.1.1_530.30.02_linux.run
+              sudo sh deps/cuda-12.1.run --silent --toolkit --no-opengl-libs --installpath=/usr/local/cuda-12.1
+            else
+              sudo apt-get install -y cuda-toolkit-12-9
+            fi
           fi
           curl -fsSL -o deps/vs.zip https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R79.zip
           unzip -q deps/vs.zip -d deps && mv deps/vapoursynth-* deps/vapoursynth
