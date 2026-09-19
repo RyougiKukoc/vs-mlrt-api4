@@ -328,7 +328,8 @@ jobs:
           Copy-DllsFromPackage "cudnn" $cudnnPayloadDir -Recursive
           Copy-Item vstrt\trtexec-install\bin\trtexec.exe $builderCudaDir
           Copy-Item vstrt\trtexec-install\bin\trtexec-build.json $builderCudaDir
-          Copy-DllsFromPackage "tensorrt" $builderCudaDir -IncludeBuildResources
+          Get-ChildItem -LiteralPath tensorrt -Recurse -Filter "*builder_resource*.dll" -File |
+            Copy-Item -Destination $builderCudaDir -Force
 
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $trtCoreCudaDir = "payload-trt-core\vsmlrt\vsmlrt-cuda"
