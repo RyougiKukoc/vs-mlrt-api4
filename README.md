@@ -137,6 +137,7 @@ On Linux x86_64, the matching release asset names are
 `vs-mlrt-linux-x64-tensorrt-<variant>.zip`,
 `vs-mlrt-linux-x64-cuda-<variant>.zip`,
 `vs-mlrt-linux-x64-cudnn-<variant>.zip`,
+`vs-mlrt-linux-x64-cudnn-part-2-<variant>.zip`,
 `vs-mlrt-linux-x64-tensorrt-builder-<variant>.zip`, and for `cu129`,
 `vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip`,
 `vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip`,
@@ -262,6 +263,7 @@ hook:
   `vs-mlrt-linux-x64-tensorrt-cu121.zip`,
   `vs-mlrt-linux-x64-cuda-cu121.zip`,
   `vs-mlrt-linux-x64-cudnn-cu121.zip`, and
+  `vs-mlrt-linux-x64-cudnn-part-2-cu121.zip`, and
   `vs-mlrt-linux-x64-tensorrt-builder-cu121.zip`.
 - `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`,
   `vs-mlrt-windows-x64-cuda-cu129.zip`,
@@ -277,6 +279,7 @@ hook:
   `vs-mlrt-linux-x64-tensorrt-cu129.zip`,
   `vs-mlrt-linux-x64-cuda-cu129.zip`,
   `vs-mlrt-linux-x64-cudnn-cu129.zip`,
+  `vs-mlrt-linux-x64-cudnn-part-2-cu129.zip`,
   `vs-mlrt-linux-x64-tensorrt-builder-cu129.zip`, and
   `vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip`,
   `vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip`,
