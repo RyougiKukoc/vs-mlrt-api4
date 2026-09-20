@@ -38,7 +38,7 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
       - name: Install build tools
         if: steps.select.outputs.build == 'true'
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl unzip git zstd xz-utils
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl unzip git zstd xz-utils patchelf
       - name: Run Linux payload regression tests
         if: steps.select.outputs.build == 'true'
         shell: bash

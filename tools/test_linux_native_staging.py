@@ -179,17 +179,18 @@ class LinuxStagingTests(unittest.TestCase):
             module.write_elf_soname_aliases(stage)
             self.assertEqual([path.name for path in stage.iterdir()], ["libopenvino.so.2460"])
 
-    def test_sentinel_soname_is_not_used_as_a_file_name(self):
+    def test_builder_resources_keep_the_sdk_name(self):
         with tempfile.TemporaryDirectory() as temp:
             stage = Path(temp)
-            # TensorRT's builder resources record a "do not link" sentinel SONAME
-            # while the loader opens them as <stem>.so.<major>.
+            # TensorRT's dispatch loader opens the fully versioned name, and the
+            # SDK file records a "do not link" sentinel SONAME, so neither rule
+            # may rename it.
             (stage / "libnvinfer_builder_resource_sm86.so.11.1.0").write_bytes(
                 minimal_shared_object("do_not_link_against_nvinfer_builder_resource_sm86")
             )
             module.write_elf_soname_aliases(stage)
             self.assertEqual(
-                [path.name for path in stage.iterdir()], ["libnvinfer_builder_resource_sm86.so.11"]
+                [path.name for path in stage.iterdir()], ["libnvinfer_builder_resource_sm86.so.11.1.0"]
             )
 
     def test_unversioned_plugin_names_are_left_alone(self):

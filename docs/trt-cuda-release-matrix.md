@@ -89,7 +89,14 @@ Important layout details:
   TensorRT builder resources public `Backend.TRT` ONNX conversion needs. Both
   the standard TensorRT and the TensorRT-RTX backends load
   `libnvinfer_builder_resource_<arch>` while building an engine, so the
-  architecture files are not optional.
+  architecture files are not optional. TensorRT's dispatch loader opens the
+  fully versioned name (`..._sm86.so.11.1.0`), which is why those files keep the
+  SDK name instead of being renamed to their SONAME.
+- Staged Linux libraries get `RUNPATH=$ORIGIN` through `patchelf`. RUNPATH
+  lookups are not transitive and the SDK ships `libopenvino.so.2460` without
+  one, so a plugin that links it cannot find `libtbb.so.12` in the same
+  directory and OpenVINO fails to load from a plain pip install. A source build
+  without `patchelf` warns and keeps the SDK search paths.
 - Linux payloads keep one regular file per library, named after the SONAME
   recorded in its ELF `DT_SONAME` (`packaging/linux_native_build.py`). The name
   is read from the library rather than derived from the file name because

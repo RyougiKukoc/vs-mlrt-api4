@@ -4,3 +4,4 @@ scripts/__pycache__/
 verification-api3-api4-vsmlrt/
 kernel.errors.txt
 __pycache__/
+build/

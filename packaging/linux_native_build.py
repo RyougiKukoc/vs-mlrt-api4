@@ -177,6 +177,12 @@ def write_elf_soname_aliases(stage: Path) -> None:
         match = re.match(r"(?P<stem>.+\.so)\.(?P<major>\d+)(?:\..+)?$", library.name)
         if not match:
             continue
+        if "builder_resource" in library.name:
+            # TensorRT's dispatch loader asks for the fully versioned name
+            # (libLoader.cpp opens libnvinfer_builder_resource_sm86.so.11.1.0),
+            # so these keep the name the SDK ships. Only the alias this function
+            # would have created is dropped, which is what removes the duplicate.
+            continue
         fallback = f"{match.group('stem')}.{match.group('major')}"
         soname = elf_dynamic_names(library)[0]
         alias = stage / (soname if soname and soname.startswith(f"{match.group('stem')}.") else fallback)
@@ -254,6 +260,30 @@ def elf_dynamic_names(path: Path) -> tuple[str | None, list[str]]:
         soname = next((read_string(value) for tag, value in entries if tag == 14), None)
         needed = [read_string(value) for tag, value in entries if tag == 1]
         return soname or None, [name for name in needed if name]
+
+
+def write_origin_runpaths(stage: Path) -> None:
+    """Point every staged library at its own directory.
+
+    RUNPATH lookups are not transitive, and the SDK libraries ship without one:
+    ``libopenvino.so.2460`` records no RUNPATH, so the ``libtbb.so.12`` it links
+    resolves only through the main program's search path. VapourSynth loads the
+    plugins itself and sets nothing, so the OpenVINO backend failed to load from
+    a plain pip install. Relocating prebuilt libraries this way is what wheel
+    repair tools do; without ``patchelf`` the payload still works when the caller
+    exports ``LD_LIBRARY_PATH``, so the build warns instead of failing.
+    """
+    patchelf = shutil.which("patchelf")
+    if patchelf is None:
+        print("vs-mlrt: patchelf is unavailable; staged libraries keep the SDK search paths", file=sys.stderr)
+        return
+    for library in sorted(stage.glob("*.so*")):
+        if library.is_symlink():
+            continue
+        subprocess.run([patchelf, "--set-rpath", "$ORIGIN", str(library)], check=True)
+    for helper in sorted((stage / "vsmlrt-cuda").glob("*")):
+        if helper.is_file() and os.access(helper, os.X_OK):
+            subprocess.run([patchelf, "--set-rpath", "$ORIGIN:$ORIGIN/..", str(helper)], check=True)
 
 
 def verify_elf_dependencies(stage: Path) -> None:
@@ -387,7 +417,10 @@ def main() -> None:
             shutil.copy2(Path(value).expanduser().resolve(), stage / "vsmlrt-cuda" / "tensorrt_rtx")
     if sys.platform == "linux":
         write_elf_soname_aliases(stage)
+        # The dependency check reads DT_NEEDED, which patchelf leaves alone, and
+        # runs first because rewriting a dynamic section confuses the reader.
         verify_elf_dependencies(stage)
+        write_origin_runpaths(stage)
     write_manifest(stage)
 
 

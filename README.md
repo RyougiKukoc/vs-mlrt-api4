@@ -284,7 +284,19 @@ Not shipped: fully versioned siblings of a library, TensorRT's
 `builder_resource_win_*` files (they build engines for a Windows deployment
 target), `nvparsers`, NVRTC `.alt` builds, cuDNN `*_train` libraries, and the
 OpenVINO frontends other than ONNX. `nvJitLink`, `nvvm`, and the TBB
-allocator/binding libraries stay: `libnvinfer` and `libtbb` name them.
+allocator/binding libraries stay: `libnvinfer` and `libtbb` name them. TensorRT
+builder resources are the exception to the SONAME rule and keep the fully
+versioned name the SDK ships, because TensorRT's dispatch loader opens exactly
+that name (`libnvinfer_builder_resource_sm86.so.11.1.0`); dropping the
+duplicate alias is what removes the second copy there.
+
+Staged Linux libraries are relabelled with `RUNPATH=$ORIGIN` (`patchelf`, the
+same mechanism wheel-repair tools use). RUNPATH lookups are not transitive and
+the SDK libraries ship without one, so without it `vsov.so` cannot find the
+`libtbb.so.12` sitting next to it when VapourSynth loads the plugin: OpenVINO
+then fails on a plain pip install even though every file is present. A source
+build without `patchelf` still works when the caller exports
+`LD_LIBRARY_PATH`.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN
