@@ -481,13 +481,21 @@ jobs:
           # One self-contained archive per tag: the generic plugins, the
           # TensorRT backends, the CUDA/cuDNN runtime, and the builder helpers
           # all travel together, and numbered volumes keep every asset below
-          # GitHub's 2 GiB limit.
-          $sources = @(".\payload-base\*", ".\payload-cuda\*", ".\payload-cudnn\*", ".\payload-builder\*")
+          # GitHub's 2 GiB limit. The staging directories are merged into one
+          # tree first: 7-Zip refuses several wildcard sources that each carry
+          # their own top-level vsmlrt/ directory.
+          $staging = @("payload-base", "payload-cuda", "payload-cudnn", "payload-builder")
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
-            $sources += @(".\payload-trt-core\*", ".\payload-trt-plugin\*", ".\payload-trt-extra\*", ".\payload-rtx\*")
-            $sources += (1..3 | ForEach-Object { ".\payload-builder-resource-$_\*" })
+            $staging += @("payload-trt-core", "payload-trt-plugin", "payload-trt-extra", "payload-rtx")
+            $staging += (1..3 | ForEach-Object { "payload-builder-resource-$_" })
           }
-          7z a -tzip -mx=1 -v1900m "vs-mlrt-windows-x64-${{ matrix.cuda_flavor }}.zip" @sources
+          $merged = "payload-all"
+          Remove-Item -Recurse -Force $merged -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force "$merged\vsmlrt" | Out-Null
+          foreach ($dir in $staging) {
+            Copy-Item -Path "$dir\vsmlrt\*" -Destination "$merged\vsmlrt" -Recurse -Force
+          }
+          7z a -tzip -mx=1 -v1900m "vs-mlrt-windows-x64-${{ matrix.cuda_flavor }}.zip" ".\payload-all\*"
           Get-ChildItem vs-mlrt-windows-x64-* |
             Select-Object Name, Length |
             Format-Table -AutoSize
