@@ -15,11 +15,15 @@ import stat
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from payload_archive import open_payload, resolve_volumes
 
 
 PAYLOAD_TAGS = {"generic", "cu121", "cu129"}
@@ -32,6 +36,8 @@ DOWNLOAD_PROGRESS_INTERVAL = 5.0
 MANIFEST_HEADER = "[VapourSynth Manifest V1]"
 PLUGIN_BASENAMES = ("vsncnn", "vsov", "vsort", "vstrt", "vstrt_rtx", "vsmigx")
 LINUX_MACHINE_NAMES = {"amd64", "x86_64"}
+PAYLOAD_STEMS = {"Windows": "vs-mlrt-windows-x64", "Linux": "vs-mlrt-linux-x64"}
+MAX_PAYLOAD_VOLUMES = 16
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -137,15 +143,15 @@ class CustomBuildHook(BuildHookInterface):
         return machine in LINUX_MACHINE_NAMES and system in {"Windows", "Linux"}
 
     def _stage_prebuilt_payloads(self, stage_dir: Path, payload_tag: str) -> None:
-        for payload in self._resolve_payload_paths(payload_tag):
-            self._safe_extract_payload(payload, stage_dir)
+        for archive in self._resolve_payload_archives(payload_tag):
+            self._safe_extract_payload(archive, stage_dir)
 
     def _stage_models(self, stage_dir: Path) -> None:
         models = self._resolve_models_payload()
         extracted = Path(self.root) / "build" / "vsmlrt_models"
         shutil.rmtree(extracted, ignore_errors=True)
         extracted.mkdir(parents=True)
-        self._safe_extract_payload(models, extracted)
+        self._safe_extract_payload([models], extracted)
         for candidate in (extracted / "vsmlrt" / "models", extracted / "models"):
             if candidate.is_dir():
                 shutil.copytree(candidate, stage_dir / "models", dirs_exist_ok=True)
@@ -231,17 +237,42 @@ class CustomBuildHook(BuildHookInterface):
     def _native_suffix(self) -> str:
         return {"Windows": ".dll", "Linux": ".so", "Darwin": ".dylib"}.get(platform.system(), ".so")
 
-    def _resolve_payload_paths(self, payload_tag: str) -> list[Path]:
+    def _resolve_payload_archives(self, payload_tag: str) -> list[list[Path]]:
+        """Return the payload as whole archives, each with the volumes it has."""
         explicit = os.environ.get("VSMLRT_PREBUILT_PATHS") or os.environ.get("VSMLRT_PREBUILT_PATH")
         if explicit:
             paths = [Path(value).expanduser().resolve() for value in explicit.split(os.pathsep) if value.strip()]
             if not paths:
                 raise RuntimeError("VSMLRT_PREBUILT_PATHS did not contain any paths.")
-            return paths
+            return [resolve_volumes(path) for path in paths]
         explicit_urls = os.environ.get("VSMLRT_PREBUILT_URLS") or os.environ.get("VSMLRT_PREBUILT_URL")
         if explicit_urls:
-            return self._download_urls([value for value in explicit_urls.split(os.pathsep) if value.strip()])
+            urls = [value for value in explicit_urls.split(os.pathsep) if value.strip()]
+            return [self._download_urls(self._volume_urls(url)) for url in urls]
         return self._download_release_payloads(payload_tag)
+
+    def _volume_urls(self, url: str) -> list[str]:
+        """Expand a numbered volume URL into the volumes that exist."""
+        if not re.fullmatch(r".*\.[0-9]{3}", url.rsplit("/", 1)[-1]):
+            return [url]
+        base = url[:-4]
+        volumes = []
+        for index in range(1, MAX_PAYLOAD_VOLUMES + 1):
+            candidate = f"{base}.{index:03d}"
+            if not self._url_exists(candidate):
+                break
+            volumes.append(candidate)
+        return volumes or [url]
+
+    def _url_exists(self, url: str) -> bool:
+        request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "vs-mlrt-build-hook"})
+        try:
+            with urllib.request.urlopen(request, timeout=60):
+                return True
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return False
+            raise
 
     def _resolve_models_payload(self) -> Path:
         explicit = os.environ.get("VSMLRT_MODELS_PREBUILT_PATH")
@@ -254,67 +285,27 @@ class CustomBuildHook(BuildHookInterface):
         tag = os.environ.get("VSMLRT_MODELS_TAG") or MODELS_TAG
         return self._download_urls([f"https://github.com/{repo}/releases/download/{tag}/{MODELS_ASSET}"])[0]
 
-    def _download_release_payloads(self, payload_tag: str) -> list[Path]:
+    def _download_release_payloads(self, payload_tag: str) -> list[list[Path]]:
+        """Download this tag's single payload archive for the running system.
+
+        Each tag publishes one self-contained archive per system: the generic
+        plugins, the TensorRT backends, the CUDA/cuDNN runtime, and the builder
+        helpers travel together, so an install downloads the model payload plus
+        this archive and nothing else. Archives above GitHub's per-asset limit
+        are published as numbered volumes.
+        """
         repo = os.environ.get("VSMLRT_RELEASE_REPO") or self._detect_github_repo()
-        system = platform.system()
-        if system == "Windows":
-            if payload_tag == GENERIC_TAG:
-                assets = ["vs-mlrt-windows-x64-generic.zip"]
-                tags = [GENERIC_TAG]
-            else:
-                assets = [
-                    "vs-mlrt-windows-x64-generic.zip",
-                    f"vs-mlrt-windows-x64-tensorrt-{payload_tag}.zip",
-                    f"vs-mlrt-windows-x64-cuda-{payload_tag}.zip",
-                    f"vs-mlrt-windows-x64-cudnn-{payload_tag}.zip",
-                ]
-                tags = [GENERIC_TAG, payload_tag, payload_tag, payload_tag]
-                assets.append(f"vs-mlrt-windows-x64-tensorrt-builder-{payload_tag}.zip")
-                tags.append(payload_tag)
-                if payload_tag == "cu129":
-                    assets.extend(
-                        [
-                            "vs-mlrt-windows-x64-tensorrt-builder-resource-1-cu129.zip",
-                            "vs-mlrt-windows-x64-tensorrt-builder-resource-2-cu129.zip",
-                            "vs-mlrt-windows-x64-tensorrt-builder-resource-3-cu129.zip",
-                            "vs-mlrt-windows-x64-tensorrt-core-cu129.zip",
-                            "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip",
-                            "vs-mlrt-windows-x64-tensorrt-extra-cu129.zip",
-                            "vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip",
-                        ]
-                    )
-                    tags.extend([payload_tag] * 7)
-        elif system == "Linux":
-            assets = ["vs-mlrt-linux-x64-generic.zip"]
-            tags = [GENERIC_TAG]
-            if payload_tag in CUDA_TAGS:
-                assets.extend(
-                    [
-                        f"vs-mlrt-linux-x64-tensorrt-{payload_tag}.zip",
-                        f"vs-mlrt-linux-x64-cuda-{payload_tag}.zip",
-                        f"vs-mlrt-linux-x64-cuda-{payload_tag}-part-2.zip",
-                        f"vs-mlrt-linux-x64-cudnn-{payload_tag}.zip",
-                        f"vs-mlrt-linux-x64-cudnn-{payload_tag}-part-2.zip",
-                        f"vs-mlrt-linux-x64-tensorrt-builder-{payload_tag}.zip",
-                    ]
-                )
-                tags.extend([payload_tag] * 6)
-                if payload_tag == "cu129":
-                    assets.extend(
-                        [
-                            *[
-                                f"vs-mlrt-linux-x64-tensorrt-builder-resource-{index}-cu129.zip"
-                                for index in range(1, 9)
-                            ],
-                            "vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip",
-                        ]
-                    )
-                    tags.extend([payload_tag] * 9)
-        else:
-            raise RuntimeError(f"No tested release payload exists for {system} {platform.machine()}.")
-        return self._download_urls(
-            [f"https://github.com/{repo}/releases/download/{tag}/{asset}" for tag, asset in zip(tags, assets)]
-        )
+        stem = PAYLOAD_STEMS.get(platform.system())
+        if stem is None:
+            raise RuntimeError(f"No tested release payload exists for {platform.system()} {platform.machine()}.")
+        asset = f"{stem}-{GENERIC_TAG}.zip" if payload_tag == GENERIC_TAG else f"{stem}-{payload_tag}.zip"
+        url = f"https://github.com/{repo}/releases/download/{payload_tag}/{asset}"
+        if not self._url_exists(url):
+            volumes = self._volume_urls(f"{url}.001")
+            if len(volumes) == 1 and volumes[0] == f"{url}.001" and not self._url_exists(f"{url}.001"):
+                raise RuntimeError(f"Release tag {payload_tag} does not publish {asset}.")
+            return [self._download_urls(volumes)]
+        return [self._download_urls([url])]
 
     def _download_urls(self, urls: list[str]) -> list[Path]:
         download_dir = Path(self.root) / "build" / "vsmlrt_downloads"
@@ -349,8 +340,8 @@ class CustomBuildHook(BuildHookInterface):
             raise
         self._report_download_progress(asset, downloaded, downloaded, started, done=True)
 
-    def _safe_extract_payload(self, archive_path: Path, destination: Path) -> None:
-        with zipfile.ZipFile(archive_path) as archive:
+    def _safe_extract_payload(self, sources: list[Path], destination: Path) -> None:
+        with open_payload(sources) as archive:
             for member in archive.infolist():
                 member_path = PurePosixPath(member.filename.replace("\\", "/"))
                 if member_path.is_absolute() or ".." in member_path.parts:
@@ -360,7 +351,7 @@ class CustomBuildHook(BuildHookInterface):
             archive.extractall(destination.parent)
             source = destination.parent / "vsmlrt"
             if not source.is_dir():
-                raise RuntimeError(f"Payload did not extract vsmlrt/: {archive_path}")
+                raise RuntimeError(f"Payload did not extract vsmlrt/: {sources[0].name}")
             if source.resolve() != destination.resolve():
                 shutil.copytree(source, destination, dirs_exist_ok=True)
                 shutil.rmtree(source)

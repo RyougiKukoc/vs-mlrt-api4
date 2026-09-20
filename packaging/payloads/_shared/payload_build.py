@@ -8,11 +8,24 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from payload_archive import open_payload, resolve_volumes
+
+
+def group_payload_volumes(paths: list[Path]) -> list[list[Path]]:
+    """Group downloaded files into whole archives, volumes included."""
+    groups: dict[str, list[Path]] = {}
+    for path in paths:
+        volumes = resolve_volumes(path)
+        groups[volumes[0].name] = volumes
+    return list(groups.values())
 
 
 CUDA_TAGS = {"cu121", "cu129"}
@@ -47,8 +60,8 @@ class ReleasePayloadBuildHook(BuildHookInterface):
             shutil.rmtree(extract_dir)
         extract_dir.mkdir(parents=True)
 
-        for payload_zip_path in payload_zip_paths:
-            with zipfile.ZipFile(payload_zip_path) as archive:
+        for archive_paths in group_payload_volumes(payload_zip_paths):
+            with open_payload(archive_paths) as archive:
                 archive.extractall(extract_dir)
 
         force_include = build_data.setdefault("force_include", {})
@@ -140,32 +153,34 @@ class ReleasePayloadBuildHook(BuildHookInterface):
                 f"https://github.com/{repo}/releases/download/{GENERIC_TAG}/vs-mlrt-windows-x64-generic.zip"
             ]
         elif tag in CUDA_TAGS:
-            urls = [
-                f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-tensorrt-{tag}.zip",
-                f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-cuda-{tag}.zip",
-                f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-cudnn-{tag}.zip",
-                f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-tensorrt-builder-{tag}.zip",
-            ]
-            if tag == "cu129":
-                urls.extend(
-                    [
-                        f"https://github.com/{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-builder-resource-1-cu129.zip",
-                        f"https://github.com/{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-builder-resource-2-cu129.zip",
-                        f"https://github.com/{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-builder-resource-3-cu129.zip",
-                        "https://github.com/"
-                        f"{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-core-cu129.zip",
-                        "https://github.com/"
-                        f"{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip",
-                        "https://github.com/"
-                        f"{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-extra-cu129.zip",
-                        "https://github.com/"
-                        f"{repo}/releases/download/cu129/vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip",
-                    ]
-                )
+            # One self-contained archive per tag, published as numbered volumes
+            # when it exceeds GitHub's per-asset limit.
+            archive = f"https://github.com/{repo}/releases/download/{tag}/vs-mlrt-windows-x64-{tag}.zip"
+            if self._url_exists(archive):
+                urls = [archive]
+            else:
+                urls = [
+                    f"{archive}.{index:03d}"
+                    for index in range(1, 16)
+                    if self._url_exists(f"{archive}.{index:03d}")
+                ]
+                if not urls:
+                    raise RuntimeError(f"Release tag {tag} does not publish vs-mlrt-windows-x64-{tag}.zip.")
         else:
             raise RuntimeError(f"Unsupported payload tag: {tag!r}.")
 
         return self._download_urls(urls)
+
+    @staticmethod
+    def _url_exists(url: str) -> bool:
+        request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "vs-mlrt-payload-build"})
+        try:
+            with urllib.request.urlopen(request, timeout=60):
+                return True
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return False
+            raise
 
     def _download_urls(self, urls: list[str]) -> list[Path]:
         download_dir = Path(self.root) / "build" / "vsmlrt_downloads"

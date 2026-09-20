@@ -132,25 +132,19 @@ The released VCS tags are:
 - `cu121`: `vstrt` built for the CUDA 12.1/TensorRT 8.6 line.
 - `cu129`: `vstrt` plus `vstrt_rtx` built for the CUDA 12.9/TensorRT 11 line.
 
-On Linux x86_64, the matching release asset names are
-`vs-mlrt-linux-x64-generic.zip`,
-`vs-mlrt-linux-x64-tensorrt-<variant>.zip`,
-`vs-mlrt-linux-x64-cuda-<variant>.zip`,
-`vs-mlrt-linux-x64-cuda-<variant>-part-2.zip`,
-`vs-mlrt-linux-x64-cudnn-<variant>.zip`,
-`vs-mlrt-linux-x64-cudnn-<variant>-part-2.zip`,
-`vs-mlrt-linux-x64-tensorrt-builder-<variant>.zip`, and for `cu129`,
-`vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip`,
-`vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip`,
-`vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip`,
-`vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip` through
-`vs-mlrt-linux-x64-tensorrt-builder-resource-8-cu129.zip`, and
-`vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`. The CUDA assets overlay in
-that order after the generic asset. Every zip is rooted at `vsmlrt/`; native
-library overlays contain ELF `.so` files, while builder and RTX overlays also
-contain helper executables and metadata. The shared `models.zip` payload is
-installed for all three refs. Linux `cu129` carries `vstrt_rtx` and its matched
-TensorRT-RTX helper. Generic Linux wheels use the VapourSynth
+Each tag publishes **one self-contained archive per system**:
+`vs-mlrt-windows-x64-<tag>.zip` and `vs-mlrt-linux-x64-<tag>.zip`. The CUDA
+archives carry everything the tag installs — the `vsncnn` and `vsov` plugins
+with their OpenVINO and Vulkan support files, the matching `vstrt` (and for
+`cu129` `vstrt_rtx`) plugins, the CUDA/cuDNN/TensorRT runtime libraries, and the
+`trtexec` builder with its TensorRT builder resources. A pip install therefore
+downloads `models.zip` plus this one archive, and nothing is downloaded twice.
+Archives above GitHub's 2 GiB per-asset limit are published as numbered volumes
+of the same stream (`vs-mlrt-linux-x64-cu129.zip.001`, `.002`, ...), exactly
+like upstream's `.7z.001` split; the build hook reads the volumes as one
+archive.
+
+Every archive is rooted at `vsmlrt/`. Generic Linux wheels use the VapourSynth
 R79 baseline tag `manylinux_2_27_x86_64`. The CUDA 12.1 and 12.9 TensorRT
 plugins are tagged `manylinux_2_34_x86_64`: `readelf --version-info` on their
 final `vstrt.so` records `GLIBC_2.34`, so presenting those SDK-bound wheels as
@@ -256,45 +250,41 @@ These Release tags remain as binary asset slots consumed by the root build
 hook:
 
 - `models`: `models.zip`.
-- `generic`: `vs-mlrt-windows-x64-generic.zip` and
-  `vs-mlrt-linux-x64-generic.zip`.
-- `cu121`: `vs-mlrt-windows-x64-tensorrt-cu121.zip`,
-  `vs-mlrt-windows-x64-cuda-cu121.zip`, and
-  `vs-mlrt-windows-x64-cudnn-cu121.zip`,
-  `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`, plus
-  `vs-mlrt-linux-x64-tensorrt-cu121.zip`,
-  `vs-mlrt-linux-x64-cuda-cu121.zip`,
-  `vs-mlrt-linux-x64-cuda-cu121-part-2.zip`,
-  `vs-mlrt-linux-x64-cudnn-cu121.zip`, and
-  `vs-mlrt-linux-x64-cudnn-cu121-part-2.zip`, and
-  `vs-mlrt-linux-x64-tensorrt-builder-cu121.zip`.
-- `cu129`: `vs-mlrt-windows-x64-tensorrt-cu129.zip`,
-  `vs-mlrt-windows-x64-cuda-cu129.zip`,
-  `vs-mlrt-windows-x64-cudnn-cu129.zip`,
-  `vs-mlrt-windows-x64-tensorrt-builder-cu129.zip`,
-  `vs-mlrt-windows-x64-tensorrt-builder-resource-1-cu129.zip`,
-  `vs-mlrt-windows-x64-tensorrt-builder-resource-2-cu129.zip`,
-  `vs-mlrt-windows-x64-tensorrt-builder-resource-3-cu129.zip`,
-  `vs-mlrt-windows-x64-tensorrt-core-cu129.zip`,
-  `vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip`,
-  `vs-mlrt-windows-x64-tensorrt-extra-cu129.zip`, and
-  `vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip`, plus
-  `vs-mlrt-linux-x64-tensorrt-cu129.zip`,
-  `vs-mlrt-linux-x64-cuda-cu129.zip`,
-  `vs-mlrt-linux-x64-cuda-cu129-part-2.zip`,
-  `vs-mlrt-linux-x64-cudnn-cu129.zip`,
-  `vs-mlrt-linux-x64-cudnn-cu129-part-2.zip`,
-  `vs-mlrt-linux-x64-tensorrt-builder-cu129.zip`, and
-  `vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip`,
-  `vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip`,
-  `vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip`, and
-  `vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip` through
-  `vs-mlrt-linux-x64-tensorrt-builder-resource-8-cu129.zip`, and
-  `vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip`.
+- `generic`: `vs-mlrt-windows-x64-generic.zip`, `vs-mlrt-linux-x64-generic.zip`.
+- `cu121`: `vs-mlrt-windows-x64-cu121.zip`, `vs-mlrt-linux-x64-cu121.zip`.
+- `cu129`: `vs-mlrt-windows-x64-cu129.zip`, `vs-mlrt-linux-x64-cu129.zip`.
 
-The Windows TensorRT 11.1 builder resources are split into three overlays; the
-Linux resources use eight overlays because both SONAME aliases and versioned
-ELF files are retained. All stay below GitHub's 2 GiB per-asset limit.
+An archive that would exceed GitHub's 2 GiB per-asset limit is published as
+numbered volumes instead (`<archive>.zip.001`, `.002`, ...); the build hook
+probes for volumes, downloads them, and reads them as a single stream. Every
+archive is deflated at level 1.
+
+Each CUDA archive is self-contained: it embeds the same `vsncnn`, `vsov`, and
+OpenVINO support files as the `generic` archive, so a `cu121` or `cu129`
+install never downloads the generic asset separately. Archives are built by
+`windows-vcs-package.yml` and `linux-vcs-package.yml`, verified inside and
+before release, and the CUDA Windows job embeds the currently published generic
+payload — publish `generic` before the CUDA tags, as the maintenance guide
+already requires.
+
+Builder resources ship inside the tag's own archive, so `trtexec` works out of
+the box: the standard TensorRT and the TensorRT-RTX backends both load
+`libnvinfer_builder_resource_<arch>` while building an engine, which is why the
+architectures are not optional.
+
+Linux archives keep one file per library, named after the SONAME recorded in
+its ELF `DT_SONAME`. That name cannot be derived from the file name: OpenVINO
+2024.6 names its files after the release year while their SONAME stays
+`libopenvino.so.2460`, and `libnvrtc-builtins.so.12.9.86` records
+`libnvrtc-builtins.so.12.9`. Staging also refuses a payload whose `DT_NEEDED`
+entries do not resolve inside it, which is the check that keeps a payload
+loadable rather than merely complete-looking.
+
+Not shipped: fully versioned siblings of a library, TensorRT's
+`builder_resource_win_*` files (they build engines for a Windows deployment
+target), `nvparsers`, NVRTC `.alt` builds, cuDNN `*_train` libraries, and the
+OpenVINO frontends other than ONNX. `nvJitLink`, `nvvm`, and the TBB
+allocator/binding libraries stay: `libnvinfer` and `libtbb` name them.
 
 The model payload is assembled from upstream `model-20211209`,
 `model-20220923`, and `contrib-models`. It includes contributed RealESRGAN

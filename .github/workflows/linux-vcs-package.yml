@@ -39,6 +39,14 @@ jobs:
       - name: Install build tools
         if: steps.select.outputs.build == 'true'
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl unzip git zstd xz-utils
+      - name: Run Linux payload regression tests
+        if: steps.select.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 tools/test_linux_native_staging.py
+          python3 tools/test_linux_payload_packaging.py
+          python3 tools/test_linux_staged_payload.py
       - name: Build native Linux payload
         if: steps.select.outputs.build == 'true'
         shell: bash
@@ -87,35 +95,21 @@ jobs:
           if [[ "$VARIANT" != generic ]]; then export CUDAToolkit_ROOT="$cuda_root" VSMLRT_TENSORRT_HOME="$PWD/deps/tensorrt" VSMLRT_TRTEXEC_PATH="$PWD/build/trtexec-install/bin/trtexec" VSMLRT_TRTEXEC_BUILD_METADATA="$PWD/build/trtexec-install/bin/trtexec-build.json" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$cuda_root/lib64:$cuda_root/nvvm/lib64:$PWD/deps/tensorrt/lib:$PWD/deps/cudnn/lib"; fi
           if [[ "$VARIANT" == cu129 ]]; then export VSMLRT_TENSORRT_RTX_HOME="$PWD/deps/tensorrt-rtx" VSMLRT_TENSORRT_RTX_PATH="$PWD/deps/tensorrt-rtx/bin/tensorrt_rtx" VSMLRT_RUNTIME_ROOTS="$VSMLRT_RUNTIME_ROOTS:$PWD/deps/tensorrt-rtx/lib"; fi
           python3 packaging/linux_native_build.py --variant "$VARIANT" --stage-dir "build/payload-$VARIANT"
-          if [[ "$VARIANT" == generic ]]; then
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component generic --output vs-mlrt-linux-x64-generic.zip
-          else
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component tensorrt --output "vs-mlrt-linux-x64-tensorrt-$VARIANT.zip"
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cuda --part-index 1 --output "vs-mlrt-linux-x64-cuda-$VARIANT.zip"
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cuda-part --part-index 2 --output "vs-mlrt-linux-x64-cuda-$VARIANT-part-2.zip"
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cudnn --part-index 1 --output "vs-mlrt-linux-x64-cudnn-$VARIANT.zip"
-            python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component cudnn-part --part-index 2 --output "vs-mlrt-linux-x64-cudnn-$VARIANT-part-2.zip"
-            if [[ "$VARIANT" == cu129 ]]; then
-              python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder-tools --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
-              for index in 1 2 3 4 5 6 7 8; do
-                python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder-resource --resource-index "$index" --output "vs-mlrt-linux-x64-tensorrt-builder-resource-$index-cu129.zip"
-              done
-            else
-              python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component builder --output "vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
-            fi
-            if [[ "$VARIANT" == cu129 ]]; then python3 tools/package_linux_payload.py --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" --component rtx --output vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip; fi
-          fi
-          for asset in vs-mlrt-linux-x64-*.zip; do
+          # One self-contained archive per tag: the generic plugins, the
+          # TensorRT backends, the CUDA/cuDNN runtime, and the builder helpers
+          # all travel together. Numbered volumes keep every asset below
+          # GitHub's 2 GiB limit.
+          python3 tools/package_linux_payload.py \
+            --stage-dir "build/payload-$VARIANT" --variant "$VARIANT" \
+            --output "vs-mlrt-linux-x64-$VARIANT.zip" \
+            --inventory "payload-inventory-$VARIANT.json"
+          for asset in vs-mlrt-linux-x64-*; do
             size=$(stat -c%s "$asset")
             if (( size >= 2147483648 )); then
               echo "Release asset exceeds GitHub's 2 GiB limit: $asset ($size bytes)" >&2
               exit 1
             fi
           done
-      - name: Download published generic Linux dependency
-        if: steps.select.outputs.build == 'true' && matrix.variant != 'generic'
-        shell: bash
-        run: curl -fsSL -o vs-mlrt-linux-x64-generic.zip "https://github.com/${{ github.repository }}/releases/download/generic/vs-mlrt-linux-x64-generic.zip"
       - name: Verify staged Linux payload
         if: steps.select.outputs.build == 'true'
         shell: bash
@@ -129,12 +123,8 @@ jobs:
         run: |
           set -euxo pipefail
           python3 -m pip install --break-system-packages "vapoursynth==79" numpy onnx onnxconverter-common
-          paths="$PWD/vs-mlrt-linux-x64-generic.zip"
-          if [[ "$VARIANT" != generic ]]; then
-            paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cuda-$VARIANT-part-2.zip:$PWD/vs-mlrt-linux-x64-cudnn-$VARIANT.zip:$PWD/vs-mlrt-linux-x64-cudnn-$VARIANT-part-2.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-$VARIANT.zip"
-            if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-1-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-2-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-3-cu129.zip:$PWD/vs-mlrt-linux-x64-tensorrt-builder-resource-4-cu129.zip"; fi
-          fi
-          if [[ "$VARIANT" == cu129 ]]; then paths="$paths:$PWD/vs-mlrt-linux-x64-tensorrt-rtx-cu129.zip"; fi
+          # A whole archive or any one of its volumes resolves to the volumes.
+          paths="$PWD/vs-mlrt-linux-x64-$VARIANT.zip"
           VSMLRT_PAYLOAD_TAG="$VARIANT" VSMLRT_PREBUILT_PATHS="$paths" python3 -m pip install --break-system-packages --no-deps --force-reinstall --no-cache-dir .
           python3 tools/smoke_linux_vcs_install.py --variant "$VARIANT"
 
@@ -143,12 +133,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vs-mlrt-linux-${{ matrix.variant }}
-          path: vs-mlrt-linux-x64-*.zip
+          path: |
+            vs-mlrt-linux-x64-*
+            payload-inventory-${{ matrix.variant }}.json
+          compression-level: 0
 
       - name: Publish Linux assets
         if: steps.select.outputs.build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ matrix.variant }}
-          files: vs-mlrt-linux-x64-*.zip
+          files: |
+            vs-mlrt-linux-x64-*
+            payload-inventory-${{ matrix.variant }}.json
           prerelease: true

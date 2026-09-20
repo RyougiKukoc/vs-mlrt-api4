@@ -149,7 +149,7 @@ jobs:
       - name: Package model payload
         shell: pwsh
         run: |
-          7z a -tzip -mx=0 "models.zip" .\payload-models\*
+          7z a -tzip -mx=1 "models.zip" .\payload-models\*
           $asset = Get-Item "models.zip"
           if ($asset.Length -ge 2147483648) {
             throw "Release asset exceeds GitHub's 2 GiB limit: $($asset.Name) ($($asset.Length) bytes)"
@@ -175,6 +175,7 @@ jobs:
         with:
           name: models
           path: models.zip
+          compression-level: 0
 
       - name: Release model payload
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)

@@ -294,6 +294,12 @@ jobs:
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
+          # Runtime families the published plugins never load, checked by reading
+          # the dynamic dependencies and the dlopen name strings of every shipped
+          # DLL: the deprecated nvparsers, the .alt NVRTC builds, and the cuDNN
+          # training libraries, which are only reachable through the training
+          # backends. nvJitLink and nvvm stay: libnvinfer names both.
+          $unusedRuntime = '(?i)(nvparsers|\.alt\.|_train)'
           function Copy-DllsFromPackage($packageDir, $destinationDir, [switch]$Recursive, [switch]$IncludeBuildResources) {
             if ($Recursive) {
               $dlls = Get-ChildItem -LiteralPath $packageDir -Recurse -Filter "*.dll" -File -ErrorAction SilentlyContinue
@@ -305,6 +311,10 @@ jobs:
             foreach ($dll in $dlls) {
               if (-not $IncludeBuildResources -and $dll.Name -match '(?i)(builder_resource|sample|test)') {
                 Write-Host "Excluding build/test-only runtime: $($dll.Name)"
+                continue
+              }
+              if ($dll.Name -match $unusedRuntime) {
+                Write-Host "Excluding runtime no published plugin loads: $($dll.Name)"
                 continue
               }
               Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $destinationDir $dll.Name) -Force
@@ -319,7 +329,15 @@ jobs:
           New-Item -ItemType Directory -Force $baseCudaDir, $cudaPayloadDir, $cudnnPayloadDir, $builderCudaDir | Out-Null
 
           Copy-Item vstrt\install\bin\vstrt.dll $basePluginDir
-          $manifestPlugins = @("[VapourSynth Manifest V1]", "vstrt")
+          # A CUDA payload is self-contained: it carries the generic plugins and
+          # their OpenVINO support DLLs, so an install downloads the model
+          # payload plus this archive and nothing else.
+          curl.exe -fsSL -o "$env:RUNNER_TEMP\generic.zip" "https://github.com/${{ github.repository }}/releases/download/generic/vs-mlrt-windows-x64-generic.zip"
+          Expand-Archive -LiteralPath "$env:RUNNER_TEMP\generic.zip" -DestinationPath generic-dependency -Force
+          Get-ChildItem -LiteralPath "generic-dependency\vsmlrt" -File |
+            Where-Object { $_.Name -ne "manifest.vs" } |
+            Copy-Item -Destination $basePluginDir -Force
+          $manifestPlugins = @("[VapourSynth Manifest V1]", "vsncnn", "vsov", "vstrt")
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $manifestPlugins += "vstrt_rtx"
           }
@@ -369,7 +387,9 @@ jobs:
 
           $cudaPath = $env:CUDA_PATH
           foreach ($runtimePath in @("$cudaPath\bin\*.dll", "$cudaPath\bin\x64\*.dll", "$cudaPath\extras\CUPTI\lib64\*.dll", "$cudaPath\nvvm\bin\*.dll")) {
-            Copy-Item $runtimePath $cudaPayloadDir -ErrorAction SilentlyContinue
+            Get-ChildItem -Path $runtimePath -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notmatch $unusedRuntime } |
+              Copy-Item -Destination $cudaPayloadDir
           }
           if (Test-Path vstrt\install_rtx\bin\vstrt_rtx.dll) {
             $rtxPluginDir = "payload-rtx\vsmlrt"
@@ -423,12 +443,17 @@ jobs:
             throw "Builder payload is missing TensorRT builder resources."
           }
           $manifest = Get-Content "payload-base\vsmlrt\manifest.vs"
-          $expectedManifest = @("[VapourSynth Manifest V1]", "vstrt")
+          $expectedManifest = @("[VapourSynth Manifest V1]", "vsncnn", "vsov", "vstrt")
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
             $expectedManifest += "vstrt_rtx"
           }
           if (Compare-Object $expectedManifest $manifest) {
             throw "CUDA manifest.vs does not match the selected plugin set."
+          }
+          foreach ($selfContained in @("payload-base\vsmlrt\vsncnn.dll", "payload-base\vsmlrt\vsov.dll", "payload-base\vsmlrt\openvino.dll")) {
+            if (-not (Test-Path $selfContained)) {
+              throw "CUDA payload is not self-contained, missing: $selfContained"
+            }
           }
           foreach ($glob in @("payload-cuda\vsmlrt\vsmlrt-cuda\nvrtc*.dll", "payload-cudnn\vsmlrt\vsmlrt-cuda\cudnn*.dll")) {
             if (-not (Test-Path $glob)) {
@@ -453,23 +478,20 @@ jobs:
         if: steps.select.outputs.should_build == 'true'
         shell: pwsh
         run: |
-          7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}.zip" .\payload-base\*
-          7z a -tzip -mx=0 "vs-mlrt-windows-x64-cuda-${{ matrix.cuda_flavor }}.zip" .\payload-cuda\*
-          7z a -tzip -mx=0 "vs-mlrt-windows-x64-cudnn-${{ matrix.cuda_flavor }}.zip" .\payload-cudnn\*
-          7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-builder-${{ matrix.cuda_flavor }}.zip" .\payload-builder\*
+          # One self-contained archive per tag: the generic plugins, the
+          # TensorRT backends, the CUDA/cuDNN runtime, and the builder helpers
+          # all travel together, and numbered volumes keep every asset below
+          # GitHub's 2 GiB limit.
+          $sources = @(".\payload-base\*", ".\payload-cuda\*", ".\payload-cudnn\*", ".\payload-builder\*")
           if ("${{ matrix.cuda_flavor }}" -eq "cu129") {
-            foreach ($index in 1..3) {
-              7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-builder-resource-$index-cu129.zip" ".\payload-builder-resource-$index\*"
-            }
-            7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-core-cu129.zip" .\payload-trt-core\*
-            7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-plugin-cu129.zip" .\payload-trt-plugin\*
-            7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-extra-cu129.zip" .\payload-trt-extra\*
-            7z a -tzip -mx=0 "vs-mlrt-windows-x64-tensorrt-rtx-cu129.zip" .\payload-rtx\*
+            $sources += @(".\payload-trt-core\*", ".\payload-trt-plugin\*", ".\payload-trt-extra\*", ".\payload-rtx\*")
+            $sources += (1..3 | ForEach-Object { ".\payload-builder-resource-$_\*" })
           }
-          Get-ChildItem vs-mlrt-windows-x64-*.zip |
+          7z a -tzip -mx=1 -v1900m "vs-mlrt-windows-x64-${{ matrix.cuda_flavor }}.zip" @sources
+          Get-ChildItem vs-mlrt-windows-x64-* |
             Select-Object Name, Length |
             Format-Table -AutoSize
-          foreach ($asset in Get-ChildItem vs-mlrt-windows-x64-*.zip) {
+          foreach ($asset in Get-ChildItem vs-mlrt-windows-x64-*.zip*) {
             if ($asset.Length -ge 2147483648) {
               throw "Release asset exceeds GitHub's 2 GiB limit: $($asset.Name) ($($asset.Length) bytes)"
             }
@@ -506,10 +528,11 @@ jobs:
         if: steps.select.outputs.should_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: vs-mlrt-windows-x64-tensorrt-${{ matrix.cuda_flavor }}
+          name: vs-mlrt-windows-x64-${{ matrix.cuda_flavor }}
           path: |
-            vs-mlrt-windows-x64-*.zip
+            vs-mlrt-windows-x64-*.zip*
             payload-provenance-${{ matrix.cuda_flavor }}.json
+          compression-level: 0
 
       - name: Release payload
         if: steps.select.outputs.should_build == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
@@ -517,7 +540,7 @@ jobs:
         with:
           tag_name: ${{ matrix.cuda_flavor }}
           files: |
-            vs-mlrt-windows-x64-*.zip
+            vs-mlrt-windows-x64-*.zip*
             payload-provenance-${{ matrix.cuda_flavor }}.json
           fail_on_unmatched_files: true
           generate_release_notes: false

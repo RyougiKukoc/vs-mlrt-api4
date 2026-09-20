@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,21 @@ import sysconfig
 import time
 import urllib.request
 import zipfile
+
+
+_spec = importlib.util.spec_from_file_location(
+    "payload_archive", Path(__file__).resolve().parents[1] / "packaging" / "payload_archive.py"
+)
+assert _spec and _spec.loader
+_archive = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_archive)
+open_payload = _archive.open_payload
+resolve_volumes = _archive.resolve_volumes
+
+
+# Release payloads are deflated, but tiny metadata members may legally be
+# stored when deflate cannot shrink them.
+STORED_MEMBER_LIMIT = 4096
 
 
 def digest_stream(stream) -> str:
@@ -60,27 +76,37 @@ def download_dependency(repo: str, tag: str, name: str, folder: Path) -> tuple[P
     return path, {"name": name, "sha256": actual, "asset_id": asset["id"], "updated_at": asset["updated_at"], "tag": tag}
 
 
-def staged_names(variant: str) -> list[str]:
+def staged_names(variant: str, asset_dir: Path) -> list[str]:
+    """Names of this variant's published assets, split volumes included."""
     if variant == "generic":
         return ["vs-mlrt-windows-x64-generic.zip"]
-    result = [f"vs-mlrt-windows-x64-{part}-{variant}.zip" for part in ["tensorrt", "cuda", "cudnn"]]
-    result.append(f"vs-mlrt-windows-x64-tensorrt-builder-{variant}.zip")
-    if variant == "cu129":
-        result.extend(f"vs-mlrt-windows-x64-tensorrt-builder-resource-{index}-cu129.zip" for index in range(1, 4))
-        result.extend(f"vs-mlrt-windows-x64-tensorrt-{part}-cu129.zip" for part in ["core", "plugin", "extra", "rtx"])
-    return result
+    return [path.name for path in sorted(asset_dir.glob(f"vs-mlrt-windows-x64-{variant}.zip*"))]
 
 
-def verify_installed(paths: list[Path], site: Path) -> int:
+def staged_archives(variant: str, asset_dir: Path) -> list[list[Path]]:
+    names = staged_names(variant, asset_dir)
+    if not names:
+        raise RuntimeError(f"No staged {variant} payload archive in {asset_dir}")
+    base = (asset_dir / names[0]).resolve()
+    return [resolve_volumes(base)]
+
+
+def verify_installed(archives: list[list[Path]], site: Path, variant: str) -> int:
     count = 0
     builder_resource_found = False
-    for path in paths:
-        with zipfile.ZipFile(path) as archive:
+    for sources in archives:
+        with open_payload(sources) as archive:
             names = [info.filename.replace("\\", "/") for info in archive.infolist() if not info.is_dir()]
             builder_resource_found = builder_resource_found or any("builder_resource" in name.lower() for name in names)
             for member in archive.infolist():
                 if member.is_dir():
                     continue
+                # Store mode made every asset as large as its payload; level 1
+                # removes 18% to 63% per family. 7-Zip may still store a member
+                # that deflate cannot shrink, so only real payload files are
+                # required to be deflated.
+                if member.compress_type != zipfile.ZIP_DEFLATED and member.file_size > STORED_MEMBER_LIMIT:
+                    raise RuntimeError(f"Release asset is stored uncompressed: {sources[0].name}: {member.filename}")
                 rel = Path(member.filename)
                 if rel.is_absolute() or ".." in rel.parts or not rel.parts or rel.parts[0] != "vsmlrt":
                     raise RuntimeError(f"Unexpected package path: {member.filename}")
@@ -93,9 +119,9 @@ def verify_installed(paths: list[Path], site: Path) -> int:
                 with archive.open(member) as stream:
                     expected = digest_stream(stream)
                 if not installed.is_file() or digest(installed) != expected:
-                    raise RuntimeError(f"Installed payload differs from staged {path.name}: {rel}")
+                    raise RuntimeError(f"Installed payload differs from staged {sources[0].name}: {rel}")
                 count += 1
-    if any("tensorrt-builder" in path.name for path in paths) and not builder_resource_found:
+    if variant != "generic" and not builder_resource_found:
         raise RuntimeError("Builder payload is missing TensorRT builder resources")
     return count
 
@@ -124,19 +150,23 @@ def main() -> None:
         verify_published(args.repo, args.variant, args.evidence)
         return
     project = Path(__file__).resolve().parents[1]
-    assets = [(args.asset_dir / name).resolve() for name in staged_names(args.variant)]
+    asset_dir = args.asset_dir.resolve()
+    archives = staged_archives(args.variant, asset_dir)
+    volumes = [path for sources in archives for path in sources]
     evidence = {"variant": args.variant, "source_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=project, text=True).strip(),
-                "staged_assets": [{"name": p.name, "sha256": digest(p), "size": p.stat().st_size} for p in assets],
+                "staged_assets": [{"name": p.name, "sha256": digest(p), "size": p.stat().st_size} for p in volumes],
                 "dependency_assets": [], "ok": False}
     args.evidence.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
     dependencies = project / "build/verification-dependencies"
     dependencies.mkdir(parents=True, exist_ok=True)
-    paths = []
+    # Every payload archive is self-contained, so the only shared download is the
+    # model payload. The generic asset the payload embedded is recorded for
+    # traceability but deliberately not installed: a payload that forgot to
+    # embed it has to fail here.
     if args.variant != "generic":
-        generic, info = download_dependency(args.repo, "generic", "vs-mlrt-windows-x64-generic.zip", dependencies)
-        paths.append(generic)
+        _, info = download_dependency(args.repo, "generic", "vs-mlrt-windows-x64-generic.zip", dependencies)
         evidence["dependency_assets"].append(info)
-    paths.extend(assets)
+    paths = list(volumes)
     models, info = download_dependency(args.repo, "models", "models.zip", dependencies)
     paths.append(models)
     evidence["dependency_assets"].append(info)
@@ -144,10 +174,10 @@ def main() -> None:
     env["VSMLRT_PREBUILT_PATHS"] = os.pathsep.join(str(p) for p in paths)
     env["VSMLRT_PAYLOAD_TAG"] = args.variant
     subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", "--force-reinstall", "--no-cache-dir", str(project)], env=env, check=True)
-    evidence["installed_file_count"] = verify_installed(assets, Path(sysconfig.get_path("purelib")))
+    evidence["installed_file_count"] = verify_installed(archives, Path(sysconfig.get_path("purelib")), args.variant)
     subprocess.run([sys.executable, str(project / "tools/smoke_vcs_extras_install.py"), "--variant", args.variant], check=True)
     # Ensure inputs were not replaced between installation and publication.
-    for path, info in zip(assets, evidence["staged_assets"]):
+    for path, info in zip(volumes, evidence["staged_assets"]):
         if digest(path) != info["sha256"]:
             raise RuntimeError(f"Staged payload changed during verification: {path}")
     evidence["ok"] = True

@@ -61,11 +61,20 @@ The build hooks download these assets from GitHub Releases:
 | --- | --- |
 | `models` | `models.zip` |
 | `generic` | `vs-mlrt-windows-x64-generic.zip`, `vs-mlrt-linux-x64-generic.zip` |
-| `cu121` | Windows `vs-mlrt-windows-x64-tensorrt-cu121.zip`, `vs-mlrt-windows-x64-cuda-cu121.zip`, `vs-mlrt-windows-x64-cudnn-cu121.zip`, `vs-mlrt-windows-x64-tensorrt-builder-cu121.zip`; Linux splits CUDA and cuDNN into two assets each |
-| `cu129` | Windows standard, split TensorRT, CUDA, cuDNN, builder tool plus three builder-resource, and RTX assets; Linux splits CUDA/cuDNN into two assets and uses eight builder-resource overlays for ELF SONAME aliases |
+| `cu121` | `vs-mlrt-windows-x64-cu121.zip`, `vs-mlrt-linux-x64-cu121.zip` |
+| `cu129` | `vs-mlrt-windows-x64-cu129.zip`, `vs-mlrt-linux-x64-cu129.zip` |
 
-All native payload zips are rooted at `vsmlrt/`. After pip installation, the
-selected payloads overlay into:
+An archive larger than GitHub's 2 GiB per-asset limit is published as numbered
+volumes of the same stream (`<archive>.zip.001`, `.002`, ...). The build hook
+probes for volumes, downloads them, and reads them as one archive.
+
+Every CUDA archive is self-contained: it carries the `vsncnn` and `vsov`
+plugins with their OpenVINO support files, so an install downloads `models.zip`
+plus this one archive and nothing twice. The Windows CUDA job embeds the
+currently published generic payload, so publish `generic` before the CUDA tags.
+
+All native payload archives are rooted at `vsmlrt/`. After pip installation,
+the payload overlays into:
 
 ```text
 site-packages/vapoursynth/plugins/vsmlrt/
@@ -76,11 +85,27 @@ Important layout details:
 - `models.zip` supplies `models/` and is shared by all three install tags.
 - CUDA payloads place CUDA, cuDNN, TensorRT, and helper executables under
   `vsmlrt/vsmlrt-cuda/`.
-- Builder overlays contain `trtexec`, its provenance JSON, and TensorRT builder
-  resources required by public `Backend.TRT` ONNX conversion. Windows `cu129`
-  publishes the tool overlay plus three resource overlays, while Linux uses
-  eight resource overlays because staged ELF SONAME aliases are retained. Both
-  stay below GitHub's 2 GiB per-asset limit.
+- Builder helpers travel with the tag: `trtexec`, its provenance JSON, and the
+  TensorRT builder resources public `Backend.TRT` ONNX conversion needs. Both
+  the standard TensorRT and the TensorRT-RTX backends load
+  `libnvinfer_builder_resource_<arch>` while building an engine, so the
+  architecture files are not optional.
+- Linux payloads keep one regular file per library, named after the SONAME
+  recorded in its ELF `DT_SONAME` (`packaging/linux_native_build.py`). The name
+  is read from the library rather than derived from the file name because
+  OpenVINO 2024.6 names its files after the release year while their SONAME
+  stays `libopenvino.so.2460`, and `libnvrtc-builtins.so.12.9.86` records
+  `libnvrtc-builtins.so.12.9`. Staging then refuses any payload whose
+  `DT_NEEDED` entries do not resolve inside it, so a name change cannot ship a
+  payload that cannot be loaded. The fully versioned sibling, TensorRT's
+  `builder_resource_win_*` files, `nvparsers`, NVRTC `.alt` builds, cuDNN
+  `*_train` libraries, and the OpenVINO frontends other than ONNX are not
+  shipped.
+- Windows payloads apply the same runtime filter (nvparsers, `.alt`, `*_train`)
+  in `windows-vcs-package.yml`. `nvJitLink`, `nvvm`, and the TBB
+  allocator/binding libraries stay: `libnvinfer` and `libtbb` name them. cuDNN
+  `*_train` libraries are reachable only through the training backends, which
+  inference never calls.
 - `vstrt.dll` lives at the plugin root. `vstrt_rtx.dll` is installed only by
   `cu129`.
 - `generic` contains no CUDA, TensorRT, ORT, or DirectML payload. It contains
@@ -104,17 +129,18 @@ Windows and Linux release assets are produced by these workflows:
 | --- | --- |
 | `.github/workflows/windows-vcs-models.yml` | Build and publish the shared `models` asset. |
 | `.github/workflows/windows-vcs-generic.yml` | Build and publish the NVIDIA-free `generic` asset. |
-| `.github/workflows/windows-vcs-package.yml` | Build and publish Windows TensorRT, CUDA, builder, and RTX assets. |
-| `.github/workflows/linux-vcs-package.yml` | Build and publish matching Linux assets. |
+| `.github/workflows/windows-vcs-package.yml` | Build and publish the cu121/cu129 Windows payload archive (volumes included). |
+| `.github/workflows/linux-vcs-package.yml` | Build and publish the matching Linux payload archive. |
 | `.github/workflows/windows-vcs-install-smoke.yml` | Manual check of the already published `generic`, `cu121`, and `cu129` VCS tags. |
 
 The generic and pinned TensorRT workflows also build pull requests, without
-publishing. Each job installs its own staged zip files through the wheel build
-hook, checks installed file hashes against those zips, then runs load/layout
-smoke. CUDA jobs use the currently published generic and model dependencies,
-whose hashes are recorded separately; they do not consume a new generic build
-from another job in the same pull request. The job
-writes `payload-provenance-<variant>.json` with its source commit, asset hashes,
+publishing. Each job installs its own staged archive through the wheel build
+hook, checks installed file hashes against that archive, then runs load/layout
+smoke. A CUDA archive embeds whatever generic payload is published when the job
+runs; its hash is recorded as a dependency, and the install check deliberately
+does not add the generic asset again, so an archive that failed to embed it
+fails the job instead of silently passing. The job writes
+`payload-provenance-<variant>.json` with its source commit, asset hashes,
 dependency identities, and verification result.
 
 Tag/manual publication happens only after that installation gate succeeds. A
@@ -186,11 +212,46 @@ hashes in the release notes or maintenance log.
 
 ## Compression Policy
 
-All `vs-mlrt` release archive creation uses `-mx=0` (store mode). NVIDIA
-runtime DLLs, models, and payload zips are already compressed or do not repay
-CI CPU time with a slower compression level. Keep Actions artifact uploads at
-`compression-level: 0` as well. Retain the existing GitHub per-asset size
-checks; faster storage must not bypass the 2 GiB release limit.
+Every asset published to the `generic`, `cu121`, `cu129`, and `models` tags is
+deflated at level 1: `7z a -tzip -mx=1` on Windows and
+`zipfile.ZIP_DEFLATED, compresslevel=1` in `tools/package_linux_payload.py` on
+Linux. Store mode made each archive exactly as large as its payload, and level
+1 is the cheapest useful setting: it costs a few seconds per asset and still
+removes 18% to 63% of the transferred bytes per family.
+
+Measured with level 1 on the published payload bytes, as a percentage of the
+uncompressed file:
+
+| Family | Level-1 size |
+| --- | --- |
+| ncnn and OpenVINO plugins (`vsncnn.so`) | 37% |
+| TensorRT libraries (`libnvinfer.so.11`) | 47% |
+| TensorRT-RTX libraries (`libtensorrt_rtx.so.1`) | 53% |
+| cuDNN libraries (`libcudnn_engines_precompiled.so.9`) | 68% |
+| TensorRT builder resources | 75% |
+| CUDA libraries (`libcublasLt.so.12`) | 82% |
+| ONNX model payload (`drunet_color.onnx`) | 93% |
+
+The model payload repays the least, but a 7% reduction of 0.94 GB is still
+about 68 MB per install.
+
+`tools/verify_staged_payload.py` (Windows) and
+`tools/verify_linux_staged_payload.py` (Linux) reject stored payload members,
+so a regression fails the job instead of silently shipping store mode again.
+Only Windows metadata members below `STORED_MEMBER_LIMIT` (4096 bytes) may stay
+stored, because 7-Zip is free to store a member that deflate cannot shrink.
+
+Keep Actions artifact uploads at `compression-level: 0`; the artifacts are the
+already-deflated release zips, so re-deflating them only costs runner time.
+Retain the existing GitHub per-asset size checks; nothing here may bypass the
+2 GiB release limit.
+
+The legacy upstream-mirror workflows (`windows-release.yml`, `windows-ncnn.yml`,
+`windows-ort.yml`, `windows-ov.yml`, `windows-migx.yml`, `windows-trt.yml`,
+`windows-trt_rtx.yml`, `windows-cuda-dependency.yml`,
+`windows-hip-dependency.yml`) deliberately keep `-mx=0` 7z output: they
+reproduce the upstream Release line, and their payloads should stay comparable
+with it. They do not feed the `generic`, `cu121`, `cu129`, or `models` tags.
 
 For `generic`, hosted smoke installs the Vulkan SDK so `vsncnn.dll` can load on
 the runner. Real ncnn and OpenVINO inference still depends on the user's GPU

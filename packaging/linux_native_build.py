@@ -8,15 +8,67 @@ pkg-config metadata without clobbering caller configuration.
 from __future__ import annotations
 
 import argparse
+import filecmp
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# TensorRT's Linux archive also carries builder resources whose names contain
+# this marker. They build engines for a Windows deployment target, which this
+# fork does not support: the release verifier already rejects Windows binaries
+# in Linux payloads, and staging them cost about 5.9 GB of every cu129 release.
+WINDOWS_BUILDER_RESOURCE_MARKER = "builder_resource_win"
+
+# Files the published plugins never load, checked by searching the dynamic
+# dependencies and the dlopen name strings of every library in the payload:
+# - ``.alt.`` NVRTC builds: nothing selects them.
+# - ``libnvparsers``: the deprecated Caffe/UFF parser that ``nvonnxparser``
+#   replaced; this fork only ever feeds ONNX.
+# - cuDNN ``*_train`` libraries: only reachable through the training backends.
+# - OpenVINO frontends other than ONNX: Windows ships only the ONNX frontend,
+#   and every OV library here reads ONNX models.
+# - TensorRT's ``_win_`` builder resources: build engines for a Windows target.
+# ``libnvJitLink`` and ``libnvvm`` are deliberately absent: ``libnvinfer``
+# names both, so TensorRT loads them while building engines. ``libtbbbind`` and
+# ``libtbbmalloc`` stay too: ``libtbb`` names them and they cost 0.5 MB.
+UNUSED_RUNTIME_MARKERS = (
+    ".alt.",
+    "libnvparsers",
+    "_train",
+    "_paddle_frontend",
+    "_pytorch_frontend",
+    "_tensorflow_frontend",
+    "_tensorflow_lite_frontend",
+    "_ir_frontend",
+)
+
+# Dynamic dependencies that come from the host rather than the payload. The
+# GPU driver, the OpenCL ICD loader, and the C/C++/Fortran runtimes are the
+# user's system libraries; everything else has to be inside the payload.
+HOST_LIBRARY_NAMES = {
+    "ld-linux-x86-64.so.2",
+    "libc.so.6",
+    "libdl.so.2",
+    "libgcc_s.so.1",
+    "libgomp.so.1",
+    "libm.so.6",
+    "libmvec.so.1",
+    "libOpenCL.so.1",
+    "libpthread.so.0",
+    "librt.so.1",
+    "libstdc++.so.6",
+    "libz.so.1",
+    "libcuda.so.1",
+    "libnvidia-ml.so.1",
+    "libnvidia-ptxjitcompiler.so.1",
+}
 
 
 def command(args: list[str], *, env: dict[str, str]) -> None:
@@ -82,13 +134,19 @@ def required_package_dir(env: dict[str, str], name: str, alias: str) -> Path:
     return Path(value).expanduser().resolve()
 
 
-def copy_runtime_family(stage: Path, roots: list[Path], prefixes: tuple[str, ...], *, exclude_builder=False) -> None:
+def copy_runtime_family(
+    stage: Path,
+    roots: list[Path],
+    prefixes: tuple[str, ...],
+    *,
+    exclude_markers: tuple[str, ...] = (),
+) -> None:
     for root in roots:
         for pattern in ("*.so*", "*.dylib*"):
             for source in root.rglob(pattern):
                 if not source.is_file() or source.is_symlink() or not source.name.startswith(prefixes):
                     continue
-                if exclude_builder and "builder_resource" in source.name:
+                if any(marker in source.name for marker in exclude_markers):
                     continue
                 destination = stage / source.name
                 if not destination.exists():
@@ -96,39 +154,152 @@ def copy_runtime_family(stage: Path, roots: list[Path], prefixes: tuple[str, ...
 
 
 def write_elf_soname_aliases(stage: Path) -> None:
-    """Create the major-version filenames requested by dynamic ELF loaders.
+    """Stage exactly one file per library, under the name its dependents request.
 
-    NVIDIA SDK archives often contain developer symlinks, which are either
-    discarded by archive tooling or inflate a wheel into repeated full copies.
-    Stage canonical files plus only the SONAME aliases needed at runtime.
+    SDK archives ship the real library under its full version next to developer
+    symlinks, and dynamic loaders resolve the literal names recorded in
+    DT_NEEDED. That name is the SONAME, which cannot be derived from the file
+    name in general: OpenVINO 2024.6 names its files after the release year
+    while keeping an ABI-based SONAME (``libopenvino.so.2024.6.0`` has SONAME
+    ``libopenvino.so.2460``), and ``libnvrtc-builtins.so.12.9.86`` records
+    ``libnvrtc-builtins.so.12.9``. Renaming to the SONAME both removes the
+    duplicated copy and produces the name the loader looks for; wheel zip
+    extraction is not guaranteed to preserve symlinks, so it has to be a
+    regular file.
+
+    A SONAME is only trusted when it names the same library. TensorRT's builder
+    resources carry a sentinel SONAME instead -- ``libnvinfer_builder_resource_
+    sm86.so.11.1.0`` records ``do_not_link_against_nvinfer_builder_resource_
+    sm86`` -- and TensorRT opens them as ``<stem>.so.<major>``, so those fall
+    back to the file-name rule.
     """
-    for library in stage.glob("*.so.*"):
+    for library in sorted(stage.glob("*.so.*")):
         match = re.match(r"(?P<stem>.+\.so)\.(?P<major>\d+)(?:\..+)?$", library.name)
         if not match:
             continue
-        alias = stage / f"{match.group('stem')}.{match.group('major')}"
-        if alias == library or alias.exists():
+        fallback = f"{match.group('stem')}.{match.group('major')}"
+        soname = elf_dynamic_names(library)[0]
+        alias = stage / (soname if soname and soname.startswith(f"{match.group('stem')}.") else fallback)
+        if alias == library:
             continue
-        # Wheel zip extraction is not guaranteed to preserve symlinks. A hard
-        # link retains one inode in the staging directory; archivers may expand
-        # it, but the installed wheel still has a valid ELF filename.
-        os.link(library, alias)
+        if not alias.exists():
+            library.rename(alias)
+            continue
+        if os.path.samefile(alias, library) or same_contents(alias, library):
+            library.unlink()
+            continue
+        raise RuntimeError(
+            f"Staged Linux payload has two different libraries for one SONAME: {alias.name} and {library.name}"
+        )
+
+
+def same_contents(first: Path, second: Path) -> bool:
+    if first.stat().st_size != second.stat().st_size:
+        return False
+    return filecmp.cmp(first, second, shallow=False)
+
+
+def elf_dynamic_names(path: Path) -> tuple[str | None, list[str]]:
+    """Return (DT_SONAME, DT_NEEDED) of a 64-bit little-endian ELF shared object."""
+    with path.open("rb") as stream:
+        header = stream.read(64)
+        if header[:4] != b"\x7fELF" or header[4] != 2 or header[5] != 1:
+            return None, []
+        program_offset = struct.unpack("<Q", header[0x20:0x28])[0]
+        entry_size, entry_count = struct.unpack("<HH", header[0x36:0x3a])
+        stream.seek(program_offset)
+        program_headers = stream.read(entry_size * entry_count)
+        load_regions: list[tuple[int, int, int]] = []
+        dynamic: tuple[int, int, int] | None = None
+        for index in range(entry_count):
+            entry = program_headers[index * entry_size:(index + 1) * entry_size]
+            kind = struct.unpack("<I", entry[0:4])[0]
+            if kind == 1:  # PT_LOAD
+                vaddr, offset, size = struct.unpack("<QQQ", entry[16:40])
+                load_regions.append((vaddr, offset, size))
+            elif kind == 2:  # PT_DYNAMIC: offset, vaddr, size
+                offset, vaddr, size = struct.unpack("<QQQ", entry[8:32])
+                dynamic = (vaddr, offset, size)
+        if dynamic is None:
+            return None, []
+
+        def file_offset(vaddr: int) -> int | None:
+            for base, offset, size in load_regions:
+                if base <= vaddr < base + size:
+                    return offset + (vaddr - base)
+            return None
+
+        stream.seek(dynamic[1])
+        table = stream.read(min(dynamic[2], 1 << 16))
+        entries: list[tuple[int, int]] = []
+        for index in range(0, len(table) - 15, 16):
+            tag, value = struct.unpack("<QQ", table[index:index + 16])
+            if tag == 0:
+                break
+            entries.append((tag, value))
+        string_address = next((value for tag, value in entries if tag == 5), None)
+        string_size = next((value for tag, value in entries if tag == 10), 0)
+        offset = file_offset(string_address) if string_address is not None else None
+        if offset is None:
+            return None, []
+        stream.seek(offset)
+        strings = stream.read(min(string_size or (1 << 20), 8 << 20))
+
+        def read_string(index: int) -> str:
+            if index >= len(strings):
+                return ""
+            end = strings.find(b"\0", index)
+            return strings[index:end if end >= 0 else len(strings)].decode("ascii", "replace")
+
+        soname = next((read_string(value) for tag, value in entries if tag == 14), None)
+        needed = [read_string(value) for tag, value in entries if tag == 1]
+        return soname or None, [name for name in needed if name]
+
+
+def verify_elf_dependencies(stage: Path) -> None:
+    """Every DT_NEEDED of every staged library must resolve inside the payload.
+
+    Names alone are not evidence: the OpenVINO payload looked complete while
+    every dependent asked for ``libopenvino.so.2460`` and no such file existed.
+    """
+    staged = {path.name for path in stage.iterdir() if path.is_file()}
+    missing: dict[str, list[str]] = {}
+    for library in sorted(stage.glob("*.so*")):
+        for needed in elf_dynamic_names(library)[1]:
+            if needed in staged or needed in HOST_LIBRARY_NAMES:
+                continue
+            missing.setdefault(needed, []).append(library.name)
+    if missing:
+        detail = "; ".join(f"{name} (needed by {', '.join(sorted(set(users)))})" for name, users in sorted(missing.items()))
+        raise RuntimeError(f"Staged Linux payload has unresolved ELF dependencies: {detail}")
 
 
 def copy_runtime(stage: Path, roots: list[Path], variant: str) -> None:
     if variant == "generic":
-        copy_runtime_family(stage, roots, ("libopenvino", "libtbb", "libonnx", "libprotobuf", "libncnn"))
+        copy_runtime_family(
+            stage,
+            roots,
+            # libhwloc is what libtbbbind_2_5 links against for TBB's affinity
+            # binding; OpenVINO's runtime ships it under 3rdparty/tbb/lib.
+            ("libopenvino", "libtbb", "libhwloc", "libonnx", "libprotobuf", "libncnn"),
+            exclude_markers=UNUSED_RUNTIME_MARKERS,
+        )
     else:
         copy_runtime_family(
             stage,
             roots,
-            ("libnvinfer", "libnvonnxparser", "libnvparsers", "libcudnn", "libcublas", "libcudart", "libcufft", "libnvblas", "libnvrtc", "libnvJitLink", "libnvvm", "libtensorrt_rtx"),
-            exclude_builder=True,
+            ("libnvinfer", "libnvonnxparser", "libcudnn", "libcublas", "libcudart", "libcufft", "libnvblas", "libnvrtc", "libnvvm", "libnvJitLink", "libtensorrt_rtx", "libtensorrt_onnxparser_rtx"),
+            exclude_markers=("builder_resource", *UNUSED_RUNTIME_MARKERS),
         )
 
 
 def copy_builder_resources(stage: Path, roots: list[Path]) -> None:
-    copy_runtime_family(stage, roots, ("libnvinfer_builder_resource",))
+    copy_runtime_family(
+        stage,
+        roots,
+        ("libnvinfer_builder_resource",),
+        exclude_markers=(WINDOWS_BUILDER_RESOURCE_MARKER,),
+    )
 
 
 def write_manifest(stage: Path) -> None:
@@ -216,6 +387,7 @@ def main() -> None:
             shutil.copy2(Path(value).expanduser().resolve(), stage / "vsmlrt-cuda" / "tensorrt_rtx")
     if sys.platform == "linux":
         write_elf_soname_aliases(stage)
+        verify_elf_dependencies(stage)
     write_manifest(stage)
 
 
