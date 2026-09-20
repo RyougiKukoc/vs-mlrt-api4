@@ -282,6 +282,10 @@ jobs:
           if ($LASTEXITCODE) { throw "Comparison gate regression failed" }
           python tools/test_payload_verification.py
           if ($LASTEXITCODE) { throw "Payload provenance regression failed" }
+          python tools/test_hook_overlay_validation.py
+          if ($LASTEXITCODE) { throw "Build hook overlay regression failed" }
+          python tools/test_vsmlrt_paths.py
+          if ($LASTEXITCODE) { throw "Installed DLL search-path regression failed" }
           python tools/regression_native_api4.py --plugin payload-generic/vsmlrt/vsncnn.dll --namespace ncnn --output verification-native-ncnn.json
           if ($LASTEXITCODE) { throw "NCNN callback regression failed" }
           python tools/regression_native_api4.py --plugin payload-generic/vsmlrt/vsov.dll --namespace ov --output verification-native-ov.json
