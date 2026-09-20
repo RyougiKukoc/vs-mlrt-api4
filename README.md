@@ -185,7 +185,7 @@ Set `VSMLRT_OPENVINO_DIR`, `VSMLRT_NCNN_DIR`, `VSMLRT_ONNX_DIR`,
 - `vsort/`, `vsmigx/`: API4-migrated sources that this fork does not publish.
 - `common/`: shared helper code used by the native plugins.
 - `packaging/`: the PEP 517 build hook, the Linux staging script, and the
-  retained payload-wheel builders under `packaging/payloads/`.
+  shared payload archive reader.
 - `tools/`: payload packaging, verification, smoke, and regression tools.
 - `docs/`: the payload rules and the recorded backend evidence.
 
@@ -204,7 +204,5 @@ Build-hook overrides, for maintainer testing only:
 - `VSMLRT_DOWNLOAD_PROGRESS=0`, `VSMLRT_DOWNLOAD_PROGRESS_INTERVAL`,
   `VSMLRT_PROGRESS_CONSOLE=0`: control download progress output.
 
-The payload-wheel builders under `packaging/payloads/` accept per-tag
-`VSMLRT_<TAG>_PREBUILT_PATH`/`_URL` overrides; normal installs use the tag-based
-commands above. Keep `generic`, `cu121`, and `cu129` on distinct commits so a
-VCS checkout resolves one install variant unambiguously.
+Keep `generic`, `cu121`, and `cu129` on distinct commits so a VCS checkout
+resolves one install variant unambiguously.
